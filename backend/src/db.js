@@ -7,6 +7,9 @@ const path = require('path');
 const fs = require('fs');
 const { DatabaseSync } = require('node:sqlite');
 
+// Emplacement de la base SQLite. Par défaut : ./data/yousis.db (persistante,
+// à côté du code). Peut être surchargé via DB_PATH (ex. /tmp/yousis.db sur un
+// hébergeur en lecture seule).
 const DB_PATH = process.env.DB_PATH || './data/yousis.db';
 const absPath = path.resolve(__dirname, '..', DB_PATH);
 

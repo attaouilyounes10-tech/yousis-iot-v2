@@ -196,65 +196,45 @@ sortie, c'est la dernière commande reçue qui est renvoyée.
 | « Device introuvable » | Vérifie que tu as copié le bon token. |
 | Le dashboard ne se met pas à jour | Recharge la page (F5) ; vérifie que le simulateur tourne. |
 
-## ☁️ Déploiement dans le cloud (Railway — accès 24/7, sans GitHub)
+## 🌐 Accès depuis l'extérieur (Ngrok — sans GitHub, PC allumé)
 
-Le site n'est plus accessible seulement depuis ton PC : on l'héberge sur **Railway**
-pour qu'il tourne en permanence. Pas besoin de compte GitHub : on déploie
-**directement depuis ton PC** avec l'outil en ligne de commande Railway. Le backend
-sert déjà le frontend compilé, donc **un seul service** suffit.
+Pour que le site soit joignable depuis n'importe où **sans compte GitHub ni
+hébergeur**, on utilise **Ngrok** : il crée un tunnel vers ton PC et donne une URL
+publique (`https://xxxx.ngrok-free.app`). Le frontend étant servi par le backend
+(port 3001), on expose uniquement ce port.
 
-### 1) Préparer le projet (en local)
+> ⚠️ **Le PC doit rester allumé** et le backend lancé. L'URL (gratuite) change à
+> chaque relance de Ngrok — recopie-la. Suffisant pour une démo/soutenance.
+
+### 1) Lancer le site en local (production)
+Double-clique sur **`lancer-site.bat`** (à la racine) : il compile le frontend puis
+démarre le backend sur `http://localhost:3001`. Laisse cette fenêtre ouverte.
+Sinon, à la main :
 ```bash
-cd yousis-iot-v2
-git init            # déjà fait si tu as suivi les étapes précédentes
-git config --global user.name "Ton Nom"
-git config --global user.email "ton.email@exemple.com"
-git add -A
-git commit -m "YOUXIS IOT v2 — prêt pour le déploiement"
+cd frontend && npm run build && cd ../backend
+node src/server.js
 ```
 
-### 2) Installer l'outil Railway et déployer
-1. Inscris-toi sur [railway.com](https://railway.com) (email suffit, pas de GitHub).
-2. Installe l'outil CLI dans un terminal :
+### 2) Créer le tunnel Ngrok
+1. Télécharge `ngrok` sur [ngrok.com/download](https://ngrok.com/download) (pas
+   besoin de GitHub) et décompresse le `.exe`.
+2. Dans un **second terminal**, depuis le dossier de `ngrok.exe` :
    ```bash
-   npm install -g @railway/cli
+   ngrok http 3001
    ```
-3. Connecte-toi et lance le déploiement (depuis la racine du projet) :
-   ```bash
-   railway login
-   railway init        # crée un nouveau projet
-   railway up          # build + déploiement vers le cloud
-   ```
-   Railway lit `railway.json` (build du frontend puis démarrage du backend).
-4. Génère l'URL publique :
-   ```bash
-   railway domain
-   ```
-   Ton site est en ligne sur l'URL affichée (ex. `https://youxis-iot-v2.up.railway.app`).
+3. Ngrok affiche une URL `https://xxxx.ngrok-free.app` → c'est l'adresse publique
+   du site. Partage-la : le dashboard se met à jour en temps réel pour tous.
 
-### 3) Variables d'environnement
-Dans l'onglet **Variables** du projet Railway (ou via `railway variables`), ajoute :
-- `JWT_SECRET` : une **chaîne longue et aléatoire** (ex. 32+ caractères).
-- `ALLOWED_ORIGINS` : `https://<ton-app>.up.railway.app,http://localhost:5173`
-- `NODE_ENV` : `production`
-
-> ⚠️ **Plan gratuit** : la base SQLite est éphémère — réinitialisée à chaque
-> redéploiement. Il faut recréer ton compte et tes devices (comme en local).
-> Suffisant pour une démo/soutenance.
-
-### 4) Alimenter le site depuis n'importe où
-Le simulateur et l'ESP32 peuvent envoyer leurs données vers l'URL en ligne :
-
+### 3) Alimenter le site depuis n'importe où
+Le simulateur et l'ESP32 envoient leurs données vers l'URL Ngrok :
 ```bash
 cd simulator
-python send_data.py --token <TOKEN> --base https://<ton-app>.up.railway.app
+python send_data.py --token <TOKEN> --base https://xxxx.ngrok-free.app
 ```
+Le sketch ESP32 (`arduino/esp32_yousis_v2.ino`) utilise `BACKEND_HOST` /
+`BACKEND_PORT` → mets l'hôte Ngrok (sans `https://`) et le port `443`.
 
-Le sketch ESP32 (`arduino/esp32_yousis_v2.ino`) pointe déjà vers une IP/port
-configurables (`BACKEND_HOST` / `BACKEND_PORT`) → mets l'URL `.up.railway.app` et le
-port `443` (HTTPS) pour qu'il alimente le site déployé.
-
-### 5) Nom de domaine personnalisé (optionnel, plus tard)
-Pour `www.youxisiotv2.com` : achète le domaine, puis dans Railway
-(**Settings → Domains**) ajoute-le et configure les enregistrements DNS indiqués.
-Ajoute-le alors dans `ALLOWED_ORIGINS`.
+### 4) Nom de domaine personnalisé (optionnel, plus tard)
+Pour `www.youxisiotv2.com` : achète le domaine, puis dans Ngroeb
+(**Domains**) ajoute-le. Ngrok gratuit limite les domaines custom — l'option la
+plus simple reste d'ajouter `www.youxisiotv2.com` comme CNAME vers ton URL Ngrok.
