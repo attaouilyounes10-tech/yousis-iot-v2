@@ -1,0 +1,245 @@
+# 🚦 YOUXIS IOT v2 — Plateforme IoT type « Blynk simplifié »
+
+Plateforme web **locale** pour démontrer les concepts IoT d'un projet académique :
+dashboard de widgets, capteurs, contrôle à distance et **temps réel** — le tout sans
+matériel grâce à un simulateur Python (ouavec un vrai ESP32 plus tard).
+
+```
+ESP32 / simulateur ──POST /api/data (token)──▶ Backend (Node) ──WebSocket──▶ Dashboard React
+```
+
+## 🧱 Stack
+
+| Couche | Technologie |
+|---|---|
+| Frontend | React 19 + Vite + Tailwind CSS v4 + recharts + socket.io-client |
+| Backend | Node.js + Express + socket.io |
+| Base | SQLite intégré (`node:sqlite`) — **aucune compilation native** |
+| Auth | JWT (jsonwebtoken) + bcryptjs (pur JS) |
+| Simulateur | Python (bibliothèque standard, zéro `pip install`) |
+
+> ✅ **Aucun outil de compilation n'est nécessaire** : tous les paquets sont en pur JavaScript.
+
+## 📁 Structure
+
+```
+yousis-iot-v2/
+├── backend/              # API + WebSocket (port 3001)
+│   ├── db/schema.sql     # schéma de la base
+│   └── src/
+│       ├── server.js     # point d'entrée
+│       ├── db.js         # connexion SQLite + application du schéma
+│       ├── auth.js       # JWT + bcryptjs
+│       ├── routes/       # auth, devices, widgets, deviceApi
+│       └── sockets/      # temps réel (socket.io)
+├── frontend/             # interface React (port 5173 en dev)
+│   └── src/              # pages (dont TableauDeBord.jsx), composants, widgets
+├── simulator/
+│   └── send_data.py      # script de démo sans matériel (mode capteurs ou feu)
+└── arduino/
+    └── esp32_yousis_v2.ino  # vrai ESP32 + HC-SR04 (optionnel, même logique)
+```
+
+## 🚀 Lancement
+
+**Prérequis** : Node.js ≥ 20 (v24 conseillé) et Python 3.
+
+### 1) Backend (API + temps réel) — port 3001
+
+Ouvre un terminal dans le dossier `backend` :
+
+```bash
+cd backend
+npm install          # première fois uniquement
+npm run dev
+```
+
+Tu dois voir : `YOUXIS IOT — backend prêt ! http://localhost:3001`
+
+### 2) Frontend (interface) — port 5173
+
+Ouvre un **second** terminal dans le dossier `frontend` :
+
+```bash
+cd frontend
+npm install          # première fois uniquement
+npm run dev
+```
+
+Puis ouvre **http://localhost:5173** dans le navigateur.
+
+## 📱 iPhone / autre PC du même réseau local (comme Blynk mobile)
+
+Pour **voir et commander** l'app depuis ton **iPhone** (même WiFi), on passe en mode
+production : **un seul serveur, un seul port**.
+
+1. **Construis le frontend une fois** (terminal dans `frontend/`) :
+   ```bash
+   npm run build
+   ```
+2. Le backend sert alors l'app sur **http://localhost:3001** (l'app n'est plus sur 5173).
+3. Récupère l'**IP du PC** : commande `ipconfig` → adresse IPv4, ex. `192.168.1.42`
+   (le backend l'affiche aussi au démarrage : ligne `📱 Réseau local (même WiFi) : …`).
+4. Sur l'iPhone : Safari → **http://192.168.1.42:3001** → identifie-toi → dashboard.
+   - **1ʳᵉ fois** : Windows demande l'autorisation du **pare-feu** →
+     cocher « Réseaux privés » → **Autoriser**.
+5. Optionnel : Safari → **Partager → Sur l'écran d'accueil** → l'app s'ouvre en plein
+   écran, comme une appli Blynk.
+
+> Le simulateur / l'ESP32 continue de tourner sur le PC et d'envoyer ses données.
+> Les **boutons et sliders** du dashboard permettent de **commander** le device depuis le
+> téléphone. Le **feu tricolore** est piloté par le device lui-même, mais tu peux le
+> **commander** (durée du vert, mode, bouton piéton) depuis l'onglet **🚦 Tableau de bord**.
+>
+> 💡 Après chaque modification du code frontend, relance `npm run build` pour mettre à jour
+> l'app mobile. Pour continuer à développer, tu peux toujours utiliser `npm run dev` (5173).
+
+## 🎬 Démonstration en 4 étapes (sans matériel)
+
+1. **Crée un compte** : `S'inscrire` → `email` + `mot de passe` (6 caractères min).
+2. **Crée un device** (page *Devices*) : nom + type, par ex. « Feu intelligent » / « esp32 ».
+   - Ouvre le device : tu y vois son **token** (bouton **Copier**) et ses datastreams.
+   - Ajoute les datastreams du feu : `distance` (cm), `pedestrian` (0/1), `feu` (0=vert, 1=orange, 2=rouge).
+3. **Lance le simulateur** dans un **3ᵉ terminal** :
+   ```bash
+   cd simulator
+   python send_data.py --token <TOKEN_COPIE>
+   ```
+4. **Retourne sur le dashboard** : clique **« + Ajouter un widget »**,
+   choisis le device, son datastream et le type de widget :
+   - **Jauge** pour `distance`, **Graphique** pour voir l'historique,
+   - **Bouton ON/OFF** ou **Slider** sur un datastream de commande pour piloter le device.
+
+Le dashboard se met à jour **en temps réel** (ouvre la page dans **2 onglets**
+pour le prouver). 🎉
+
+## 🚦 Tableau de bord du feu intelligent (le vrai projet du module)
+
+La plateforme peut simuler le **feu tricolore intelligent** (capteur HC-SR04) et le
+**commander en temps réel**, comme une appli Blynk :
+
+1. Menu **🚦 Tableau de bord** → bouton **« ⚙️ Créer le device Feu intelligent »**.
+   - Il crée le device + ses 6 datastreams : `distance` (cm), `pedestrian` (0/1),
+     `feu` (0 = vert, 1 = orange, 2 = rouge) et les **commandes** `duree_vert` (s),
+     `mode` (0 auto / 1 vert forcé / 2 rouge forcé) et `bouton_pieton`.
+2. Copie le **token** affiché.
+3. Lance le simulateur côté feu (3ᵉ terminal) :
+   ```bash
+   cd simulator
+   python send_data.py --token <TOKEN>
+   ```
+4. Retourne sur **http://localhost:5173/tableau-bord** : la page se met à jour **en temps réel**.
+   Quand un piéton s'approche (distance < seuil), le feu passe
+   **vert → orange (2 s) → rouge (6 s)** pendant que le piéton traverse, puis revient au vert.
+   Un **graphique** trace la distance et un **journal d'événements** enregistre chaque détection.
+
+**Commander le feu depuis le PC comme depuis le téléphone** :
+- **Durée du vert** (slider 1-30 s) : le feu reste vert au moins cette durée avant qu'un piéton
+  puisse déclencher l'orange.
+- **Mode système** : Auto · **Vert forcé** (les voitures passent) · **Rouge forcé** (le piéton traverse).
+- **Bouton Piéton** : déclenche un passage à la demande (comme un bouton d'appel piéton).
+
+**Logique côté device** : le simulateur (comme un vrai ESP32) mesure la distance, détecte le
+piéton, pilote le feu **et lit chaque seconde les commandes** du tableau de bord via
+`GET /api/devices/:token/latest`. La plateforme affiche et commande, le device décide.
+→ avec un vrai ESP32, utilise `arduino/esp32_yousis_v2.ino` (HC-SR04 : TRIG = GPIO 13,
+ECHO = GPIO 12), qui envoie les 3 valeurs avec l'en-tête `X-Device-Token` et applique les
+commandes `duree_vert` / `mode`.
+
+Paramètres du simulateur : `--seuil 80` (distance de détection en cm), `--interval 1`
+(secondes entre deux envois ; le mode feu passe automatiquement à 1 s).
+
+## 🔐 API des appareils (compatible ESP32)
+
+Le simulateur (ou un vrai microcontrôleur) envoie ses données ainsi :
+
+```bash
+# Envoyer une valeur
+curl -X POST http://localhost:3001/api/data \
+     -H "Content-Type: application/json" \
+     -H "X-Device-Token: <TOKEN>" \
+     -d '{"key":"distance","value":45.2}'
+
+# Dernier état des datastreams
+curl http://localhost:3001/api/devices/<TOKEN>/latest
+
+# Historique
+curl "http://localhost:3001/api/devices/<TOKEN>/history?key=distance&limit=50"
+```
+
+Le device lit les commandes (bouton/slider) dans `/latest` : pour une valeur de
+sortie, c'est la dernière commande reçue qui est renvoyée.
+
+## ⚙️ Configuration
+
+- Ports et secret JWT : dans `backend/.env` (copier `.env.example` si besoin).
+- Seuils d'alerte (ex. ⚠️ distance < 80) : page **Détail du device** → champ
+  « Alerte si > max » → **Appliquer seuils**. La bannière rouge apparaît sur le dashboard.
+- Statut en ligne/hors ligne : un device est « en ligne » s'il a envoyé une donnée
+  il y a moins de 15 secondes.
+
+## 🧠 Concept à retenir (pour la soutenance)
+
+- **Auth device ≠ auth utilisateur** : l'utilisateur se connecte avec son JWT ;
+  le device s'identifie par son **token unique**. Deux mécanismes séparés.
+- **Le serveur décide qui reçoit quoi** : chaque utilisateur est dans sa propre
+  « room » WebSocket — impossible de voir les données d'un autre.
+- **Statut en ligne calculé** (pas stocké) : « en ligne » = donnée reçue < 15 s.
+
+## 🐛 Dépannage
+
+| Problème | Solution |
+|---|---|
+| `npm install` lent | Normal la 1ʳᵉ fois ; aucune compilation native requise. |
+| Port 3001 déjà utilisé | Change `PORT` dans `backend/.env`. |
+| Le simulateur dit « Serveur injoignable » | Le backend tourne-t-il ? (`npm run dev` dans `backend`) |
+| « Device introuvable » | Vérifie que tu as copié le bon token. |
+| Le dashboard ne se met pas à jour | Recharge la page (F5) ; vérifie que le simulateur tourne. |
+
+## ☁️ Déploiement dans le cloud (Render — accès 24/7, gratuit)
+
+Le site n'est plus accessible seulement depuis ton PC : on l'héberge sur **Render**
+(plan gratuit) pour qu'il tourne en permanence. Le backend sert déjà le frontend
+compilé, donc **un seul service** suffit.
+
+### 1) Préparer le dépôt GitHub
+```bash
+cd yousis-iot-v2
+git init
+git add -A
+git commit -m "YOUXIS IOT v2 — prêt pour le déploiement"
+# Crée un repo sur github.com, puis :
+git remote add origin <URL_DE_TON_REPO>
+git push -u origin main
+```
+
+### 2) Créer le service sur Render
+1. [render.com](https://render.com) → **New → Web Service** → connecte ton dépôt GitHub.
+2. Render détecte `render.yaml` automatiquement.
+3. Renseigne les **variables d'environnement** (sinon le service ne démarre pas
+   correctement) :
+   - `JWT_SECRET` : une **chaîne longue et aléatoire** (ex. 32+ caractères).
+   - `ALLOWED_ORIGINS` : `https://<ton-app>.onrender.com,http://localhost:5173`
+4. Clique **Deploy**. Au bout de ~1-2 min, l'app est en ligne sur
+   `https://<ton-app>.onrender.com`.
+
+> ⚠️ **Plan gratuit** : le disque est **éphémère**. La base SQLite persiste entre
+> redémarrages, mais est **réinitialisée à chaque nouveau déploiement** — il faut
+> recréer ton compte et tes devices (comme en local). Suffisant pour une démo/soutenance.
+
+### 3) Alimenter le site depuis n'importe où
+Le simulateur et l'ESP32 peuvent envoyer leurs données vers l'URL en ligne :
+
+```bash
+cd simulator
+python send_data.py --token <TOKEN> --base https://<ton-app>.onrender.com
+```
+
+Le sketch ESP32 (`arduino/esp32_yousis_v2.ino`) pointe déjà vers une IP/port
+configurables (`BACKEND_HOST` / `BACKEND_PORT`) → mets l'URL `.onrender.com` et le
+port `443` (HTTPS) pour qu'il alimente le site déployé.
+
+### 4) Nom de domaine personnalisé (optionnel, plus tard)
+Pour `www.youxisiotv2.com` : achète le domaine, puis dans Render
+(**Settings → Custom Domains**) ajoute-le et configure les enregistrements DNS
+indiqués. Ajoute-le alors dans `ALLOWED_ORIGINS`.

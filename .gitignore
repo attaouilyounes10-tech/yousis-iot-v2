@@ -1,0 +1,18 @@
+# Dépendances
+node_modules/
+
+# Variables d'environnement (contiennent des secrets !)
+*.env
+backend/.env
+.env
+.env.example
+
+# Base SQLite locale (recréée au démarrage ; en prod, gérée par le serveur)
+backend/data/
+
+# Build frontend (rebuild au déploiement)
+frontend/dist/
+
+# Python
+__pycache__/
+*.pyc
