@@ -196,50 +196,65 @@ sortie, c'est la dernière commande reçue qui est renvoyée.
 | « Device introuvable » | Vérifie que tu as copié le bon token. |
 | Le dashboard ne se met pas à jour | Recharge la page (F5) ; vérifie que le simulateur tourne. |
 
-## ☁️ Déploiement dans le cloud (Render — accès 24/7, gratuit)
+## ☁️ Déploiement dans le cloud (Railway — accès 24/7, sans GitHub)
 
-Le site n'est plus accessible seulement depuis ton PC : on l'héberge sur **Render**
-(plan gratuit) pour qu'il tourne en permanence. Le backend sert déjà le frontend
-compilé, donc **un seul service** suffit.
+Le site n'est plus accessible seulement depuis ton PC : on l'héberge sur **Railway**
+pour qu'il tourne en permanence. Pas besoin de compte GitHub : on déploie
+**directement depuis ton PC** avec l'outil en ligne de commande Railway. Le backend
+sert déjà le frontend compilé, donc **un seul service** suffit.
 
-### 1) Préparer le dépôt GitHub
+### 1) Préparer le projet (en local)
 ```bash
 cd yousis-iot-v2
-git init
+git init            # déjà fait si tu as suivi les étapes précédentes
+git config --global user.name "Ton Nom"
+git config --global user.email "ton.email@exemple.com"
 git add -A
 git commit -m "YOUXIS IOT v2 — prêt pour le déploiement"
-# Crée un repo sur github.com, puis :
-git remote add origin <URL_DE_TON_REPO>
-git push -u origin main
 ```
 
-### 2) Créer le service sur Render
-1. [render.com](https://render.com) → **New → Web Service** → connecte ton dépôt GitHub.
-2. Render détecte `render.yaml` automatiquement.
-3. Renseigne les **variables d'environnement** (sinon le service ne démarre pas
-   correctement) :
-   - `JWT_SECRET` : une **chaîne longue et aléatoire** (ex. 32+ caractères).
-   - `ALLOWED_ORIGINS` : `https://<ton-app>.onrender.com,http://localhost:5173`
-4. Clique **Deploy**. Au bout de ~1-2 min, l'app est en ligne sur
-   `https://<ton-app>.onrender.com`.
+### 2) Installer l'outil Railway et déployer
+1. Inscris-toi sur [railway.com](https://railway.com) (email suffit, pas de GitHub).
+2. Installe l'outil CLI dans un terminal :
+   ```bash
+   npm install -g @railway/cli
+   ```
+3. Connecte-toi et lance le déploiement (depuis la racine du projet) :
+   ```bash
+   railway login
+   railway init        # crée un nouveau projet
+   railway up          # build + déploiement vers le cloud
+   ```
+   Railway lit `railway.json` (build du frontend puis démarrage du backend).
+4. Génère l'URL publique :
+   ```bash
+   railway domain
+   ```
+   Ton site est en ligne sur l'URL affichée (ex. `https://youxis-iot-v2.up.railway.app`).
 
-> ⚠️ **Plan gratuit** : le disque est **éphémère**. La base SQLite persiste entre
-> redémarrages, mais est **réinitialisée à chaque nouveau déploiement** — il faut
-> recréer ton compte et tes devices (comme en local). Suffisant pour une démo/soutenance.
+### 3) Variables d'environnement
+Dans l'onglet **Variables** du projet Railway (ou via `railway variables`), ajoute :
+- `JWT_SECRET` : une **chaîne longue et aléatoire** (ex. 32+ caractères).
+- `ALLOWED_ORIGINS` : `https://<ton-app>.up.railway.app,http://localhost:5173`
+- `NODE_ENV` : `production`
 
-### 3) Alimenter le site depuis n'importe où
+> ⚠️ **Plan gratuit** : la base SQLite est éphémère — réinitialisée à chaque
+> redéploiement. Il faut recréer ton compte et tes devices (comme en local).
+> Suffisant pour une démo/soutenance.
+
+### 4) Alimenter le site depuis n'importe où
 Le simulateur et l'ESP32 peuvent envoyer leurs données vers l'URL en ligne :
 
 ```bash
 cd simulator
-python send_data.py --token <TOKEN> --base https://<ton-app>.onrender.com
+python send_data.py --token <TOKEN> --base https://<ton-app>.up.railway.app
 ```
 
 Le sketch ESP32 (`arduino/esp32_yousis_v2.ino`) pointe déjà vers une IP/port
-configurables (`BACKEND_HOST` / `BACKEND_PORT`) → mets l'URL `.onrender.com` et le
+configurables (`BACKEND_HOST` / `BACKEND_PORT`) → mets l'URL `.up.railway.app` et le
 port `443` (HTTPS) pour qu'il alimente le site déployé.
 
-### 4) Nom de domaine personnalisé (optionnel, plus tard)
-Pour `www.youxisiotv2.com` : achète le domaine, puis dans Render
-(**Settings → Custom Domains**) ajoute-le et configure les enregistrements DNS
-indiqués. Ajoute-le alors dans `ALLOWED_ORIGINS`.
+### 5) Nom de domaine personnalisé (optionnel, plus tard)
+Pour `www.youxisiotv2.com` : achète le domaine, puis dans Railway
+(**Settings → Domains**) ajoute-le et configure les enregistrements DNS indiqués.
+Ajoute-le alors dans `ALLOWED_ORIGINS`.
