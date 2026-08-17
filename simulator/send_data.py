@@ -40,11 +40,11 @@ DEFAULT_BASE = "http://localhost:3001"
 SEUIL_DEFAULT = 80  # cm
 
 # États du feu (lampes des voitures)
-FEU_VERT, FEU_ORANGE, FEU_ROUGE = 0, 1, 2
-NOMS_FEU = {FEU_VERT: "VERT", FEU_ORANGE: "ORANGE", FEU_ROUGE: "ROUGE"}
+FEU_VERT, FEU_ORANGE, FEU_ROUGE, FEU_MAINT = 0, 1, 2, 3
+NOMS_FEU = {FEU_VERT: "VERT", FEU_ORANGE: "ORANGE", FEU_ROUGE: "ROUGE", FEU_MAINT: "MAINTENANCE"}
 
 # Modes de commande du système (boutons du tableau de bord)
-NOMS_MODE = {0: "AUTO", 1: "VERT FORCE", 2: "ROUGE FORCE"}
+NOMS_MODE = {0: "AUTO", 1: "VERT FORCE", 2: "ROUGE FORCE", 3: "MAINTENANCE"}
 
 
 def request(base, path, token=None, body=None):
@@ -78,8 +78,9 @@ class FeuScenario:
         VERT --piéton--> ORANGE (3 s) --→ ROUGE (10 s) --→ VERT
     """
 
-    DUREE_ORANGE = 3.0   # s : les voitures s'apprêtent à s'arrêter
-    DUREE_ROUGE = 10.0   # s : le piéton traverse (durée lisible pour la démo)
+    DUREE_ORANGE = 3.0    # s : les voitures s'apprêtent à s'arrêter
+    DUREE_ROUGE = 10.0    # s : le piéton traverse (durée lisible pour la démo)
+    DUREE_PIETON = 4.0    # s : temps de traversée du piéton (feu rouge pour voitures)
     ROUTE_DEGAGEE = (140.0, 400.0)  # cm : route libre (pas de piéton)
     PIETON_DIST = (20.0, 70.0)      # cm : piéton devant le capteur
     PIETON_DUREE = (12.0, 18.0)    # s : présence du piéton (reste détecté le temps de traverser)
@@ -88,7 +89,7 @@ class FeuScenario:
     def __init__(self, seuil=SEUIL_DEFAULT):
         self.seuil = seuil
         self.duree_vert = 5.0      # s : durée minimale du vert (commandée depuis la plateforme)
-        self.mode = 0              # 0 auto · 1 vert forcé · 2 rouge forcé
+        self.mode = 0              # 0 auto · 1 vert forcé · 2 rouge forcé · 3 maintenance
         self._distance = random.uniform(*self.ROUTE_DEGAGEE)
         self._ped_until = 0.0      # fin de la présence du piéton (time.monotonic)
         self._next_ped = self._now() + random.uniform(*self.PROCHAIN_PIETON)
@@ -109,7 +110,7 @@ class FeuScenario:
         """Applique les commandes lues sur /latest (tableau de bord)."""
         if duree_vert is not None and 1 <= duree_vert <= 60:
             self.duree_vert = duree_vert
-        if mode in (0, 1, 2):
+        if mode in (0, 1, 2, 3):
             self.mode = mode
         if bouton_pieton is not None:
             # Front montant (0 -> 1) = une demande de passage à la demande
@@ -140,9 +141,15 @@ class FeuScenario:
         que l'action de l'utilisateur soit visible tout de suite. Le vert minimal
         ne s'applique qu'au déclenchement automatique (le feu ne passe pas orange
         tout seul trop tôt).
+
+        Mode 3 = MAINTENANCE : le feu se fige en état 3 (clignote orange côté
+        interface), la circulation est coupée, aucun passage n'est compté.
         """
         now = self._now()
-        if self.mode == 1:  # VERT forcé : le piéton attend
+        if self.mode == 3:  # MAINTENANCE : feu clignotant (état 3)
+            self._feu = FEU_MAINT
+            self._pending = False
+        elif self.mode == 1:  # VERT forcé : le piéton attend
             self._feu = FEU_VERT
             self._cycle_start = now
             self._pending = False
@@ -168,7 +175,15 @@ class FeuScenario:
         return self._feu
 
     def etat(self):
-        """Renvoie (distance_cm, pedestrian 0/1, feu 0/1/2, compteur)."""
+        """Renvoie (distance_cm, pedestrian 0/1, feu 0/1/2/3, compteur)."""
+        # En maintenance, la distance est figée et rien n'est compté.
+        if self.mode == 3:
+            pedestrian = 0
+            self._ped_prec = pedestrian
+            appui = self._appui
+            self._appui = False
+            feu = self._mettre_a_jour_feu(False)
+            return round(self._distance, 1), pedestrian, feu, self._compteur
         distance = round(self._nouvelle_distance(), 1)
         pedestrian = 1 if distance < self.seuil else 0
         # Comptabilise un passage sur le front montant du piéton (comme le sketch ESP32)

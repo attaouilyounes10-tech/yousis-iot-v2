@@ -23,11 +23,17 @@ export default function Layout() {
             </h1>
           </div>
           <nav className="flex flex-wrap items-center gap-1.5">
+            <NavLink to="/feu" className={linkCls}>
+              🚦 Feu
+            </NavLink>
             <NavLink to="/tableau-bord" className={linkCls}>
-              🚦 Tableau de bord
+              🎛️ Tableau
             </NavLink>
             <NavLink to="/cycles" className={linkCls}>
               📈 Cycles
+            </NavLink>
+            <NavLink to="/montage" className={linkCls}>
+              🔧 Montage
             </NavLink>
             <NavLink to="/" end className={linkCls}>
               Dashboard

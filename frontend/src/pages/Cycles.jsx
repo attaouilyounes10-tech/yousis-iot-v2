@@ -11,11 +11,12 @@ import { api } from '../lib/api.js';
 import { useLiveData } from '../hooks/useLiveData.jsx';
 import { fmtTime } from '../lib/format.js';
 
-// état -> { label, couleur } (le device n'émet que 0/1/2)
+// état -> { label, couleur } (le device émet 0/1/2/3 ; 3 = maintenance)
 const ETAT = {
-  0: { label: 'VERT',   cls: 'text-emerald-300', dot: '#10b981' },
-  1: { label: 'ORANGE', cls: 'text-amber-300',   dot: '#f59e0b' },
-  2: { label: 'ROUGE',  cls: 'text-red-300',     dot: '#ef4444' },
+  0: { label: 'VERT',        cls: 'text-emerald-300', dot: '#10b981' },
+  1: { label: 'ORANGE',      cls: 'text-amber-300',   dot: '#f59e0b' },
+  2: { label: 'ROUGE',       cls: 'text-red-300',     dot: '#ef4444' },
+  3: { label: 'MAINTENANCE', cls: 'text-amber-300',   dot: '#f59e0b' },
 };
 
 const tile = 'rounded-3xl border border-slate-800 bg-slate-900/70 p-6';

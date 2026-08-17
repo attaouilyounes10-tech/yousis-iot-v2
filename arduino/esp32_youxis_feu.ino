@@ -65,15 +65,15 @@ const float SEUIL_DISTANCE = 40.0;           // cm : sous ce seuil -> piéton
 const unsigned long WIFI_TIMEOUT = 10000;
 const unsigned long COOLDOWN = 5000;         // anti-répétition détection
 
-// Durées de la machine à états (ms)
-const unsigned long dureeRouge  = 5000;
-unsigned long dureeVert = 6000;              // modifiable depuis le dashboard (duree_vert)
-const unsigned long dureeOrange = 2000;
-const unsigned long dureePieton = 4000;
+// Durées de la machine à états (ms) — harmonisées avec le simulateur
+const unsigned long dureeRouge  = 10000;     // le piéton traverse (10 s)
+unsigned long dureeVert = 5000;             // vert minimal (>= 5 s), modifiable depuis le dashboard
+const unsigned long dureeOrange = 3000;     // les voitures s'arrêtent (3 s)
+const unsigned long dureePieton = 4000;     // temps de traversée du piéton (4 s)
 
 // ----- Commandes reçues du dashboard (GET /latest) -----
-float dureeVertCmd = 6.0f;   // s
-int   mode = 0;              // 0 auto · 1 vert forcé · 2 rouge forcé
+float dureeVertCmd = 5.0f;   // s (>= 5 s)
+int   mode = 0;              // 0 auto · 1 vert forcé · 2 rouge forcé · 3 maintenance
 bool  boutonHaut = false;    // impulsion bouton_pieton
 bool  boutonPrec = false;    // détection de front
 
@@ -88,7 +88,7 @@ unsigned long dernierBip = 0;
 unsigned long dernierEnvoi = 0;
 const unsigned long INTERVALLE_ENVOI = 1000;   // envoi vers YOUXIS toutes les 1 s
 
-enum EtatFeu { ROUGE, VERT, ORANGE, PIETON };
+enum EtatFeu { ROUGE, VERT, ORANGE, PIETON, MAINTENANCE };
 EtatFeu etatActuel = ROUGE;
 unsigned long tempsEntree = 0;
 
@@ -166,7 +166,7 @@ void lireCommandesYOUXIS() {
     float dv = extraireNombre(body, "duree_vert");
     if (dv > 0) dureeVertCmd = dv;
     float m = extraireNombre(body, "mode");
-    if (m >= 0 && m <= 2) mode = (int)m;
+    if (m >= 0 && m <= 3) mode = (int)m;
     float bp = extraireNombre(body, "bouton_pieton");
     boutonHaut = (bp == 1);
   }
@@ -217,6 +217,10 @@ void entrerDansEtat(EtatFeu nouvelEtat) {
       // comptage d'un passage piéton
       compteurPietons++;
       break;
+    case MAINTENANCE:
+      // Feu orange clignotant + buzzer (géré par clignoteMaintenance() dans loop)
+      etatTexte = "MAINTENANCE"; feuCode = 3; pedCode = 0;
+      break;
   }
 
   Serial.println(etatTexte);
@@ -228,7 +232,7 @@ void entrerDansEtat(EtatFeu nouvelEtat) {
 }
 
 void gererBuzzer() {
-  if (etatActuel != PIETON) {
+  if (etatActuel != PIETON && etatActuel != MAINTENANCE) {
     noTone(PIN_BUZZER);
     buzzerEtat = false;
     return;
@@ -239,6 +243,25 @@ void gererBuzzer() {
     if (buzzerEtat) tone(PIN_BUZZER, 1000);
     else noTone(PIN_BUZZER);
   }
+}
+
+// Feu en maintenance : orange clignotant (non bloquant) + buzzer.
+// L'état 3 est envoyé vers YOUXIS à chaque entrée dans l'état.
+void clignoterMaintenance() {
+  static unsigned long dernierClignote = 0;
+  static bool orangeOn = false;
+  if (millis() - dernierClignote >= 500) {
+    dernierClignote = millis();
+    orangeOn = !orangeOn;
+    if (orangeOn) {
+      digitalWrite(PIN_ROUGE, LOW);
+      digitalWrite(PIN_VERT, LOW);
+      digitalWrite(PIN_ORANGE, HIGH);
+    } else {
+      digitalWrite(PIN_ORANGE, LOW);
+    }
+  }
+  gererBuzzer();
 }
 
 // ============================================================
@@ -327,7 +350,14 @@ void loop() {
   dureeVert = (unsigned long)(dureeVertCmd * 1000.0f);
 
   // ---- Modes forcés (dashboard) ----
-  if (mode == 1) {            // VERT forcé : les voitures passent
+  if (mode == 3) {            // MAINTENANCE : feu orange clignotant + buzzer
+    if (etatActuel != MAINTENANCE) {
+      entrerDansEtat(MAINTENANCE);
+      envoyerYOUGIS("feu", 3);
+      envoyerYOUGIS("pedestrian", 0);
+    }
+    clignoterMaintenance();
+  } else if (mode == 1) {     // VERT forcé : les voitures passent
     if (etatActuel != VERT) entrerDansEtat(VERT);
   } else if (mode == 2) {     // ROUGE forcé : le piéton traverse
     if (etatActuel != PIETON) entrerDansEtat(PIETON);

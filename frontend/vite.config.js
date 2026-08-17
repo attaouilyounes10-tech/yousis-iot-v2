@@ -7,8 +7,13 @@ import tailwindcss from '@tailwindcss/vite';
 // vers le backend Express (port 3001). Ainsi tout est "same-origin".
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Permet de lire le sketch Arduino situé À LA RACINE du repo
+  // (frontend/src/pages/Montage.jsx l'importe via « ../../../arduino/...?raw »).
   server: {
     port: 5173,
+    fs: {
+      allow: ['..'],
+    },
     proxy: {
       '/api': 'http://localhost:3001',
       '/socket.io': { target: 'http://localhost:3001', ws: true },
