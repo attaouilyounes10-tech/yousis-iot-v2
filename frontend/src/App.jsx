@@ -13,6 +13,7 @@ import Devices from './pages/Devices.jsx';
 import DeviceDetail from './pages/DeviceDetail.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import TableauDeBord from './pages/TableauDeBord.jsx';
+import Cycles from './pages/Cycles.jsx';
 
 export default function App() {
   const { token } = useAuth();
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="devices" element={<Devices />} />
           <Route path="devices/:id" element={<DeviceDetail />} />
           <Route path="tableau-bord" element={<TableauDeBord />} />
+          <Route path="cycles" element={<Cycles />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

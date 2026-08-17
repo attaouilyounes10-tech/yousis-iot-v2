@@ -26,6 +26,9 @@ export default function Layout() {
             <NavLink to="/tableau-bord" className={linkCls}>
               🚦 Tableau de bord
             </NavLink>
+            <NavLink to="/cycles" className={linkCls}>
+              📈 Cycles
+            </NavLink>
             <NavLink to="/" end className={linkCls}>
               Dashboard
             </NavLink>

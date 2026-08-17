@@ -75,15 +75,15 @@ class FeuScenario:
     C'est exactement ce que ferait un vrai ESP32 branché au HC-SR04 :
     on mesure la distance, on détecte le piéton (distance < seuil) et on
     pilote le feu avec une petite machine à états :
-        VERT --piéton--> ORANGE (2 s) --→ ROUGE (6 s) --→ VERT
+        VERT --piéton--> ORANGE (3 s) --→ ROUGE (10 s) --→ VERT
     """
 
-    DUREE_ORANGE = 2.0   # s : les voitures s'apprêtent à s'arrêter
-    DUREE_ROUGE = 6.0    # s : le piéton traverse
+    DUREE_ORANGE = 3.0   # s : les voitures s'apprêtent à s'arrêter
+    DUREE_ROUGE = 10.0   # s : le piéton traverse (durée lisible pour la démo)
     ROUTE_DEGAGEE = (140.0, 400.0)  # cm : route libre (pas de piéton)
     PIETON_DIST = (20.0, 70.0)      # cm : piéton devant le capteur
-    PIETON_DUREE = (6.0, 10.0)      # s : présence du piéton
-    PROCHAIN_PIETON = (12.0, 30.0)  # s avant le piéton suivant
+    PIETON_DUREE = (12.0, 18.0)    # s : présence du piéton (reste détecté le temps de traverser)
+    PROCHAIN_PIETON = (45.0, 75.0)  # s de vert calme avant le piéton suivant (cycles bien espacés)
 
     def __init__(self, seuil=SEUIL_DEFAULT):
         self.seuil = seuil
@@ -98,6 +98,8 @@ class FeuScenario:
         self._pending = False      # un passage a été demandé (piéton ou bouton)
         self._appui = False        # impulsion du bouton « Piéton » en attente
         self._bouton_prec = 0      # valeur précédente du bouton (détection de front)
+        self._compteur = 0         # nombre total de passages piétons comptabilisés
+        self._ped_prec = 0         # valeur précédente du piéton (détection de front)
 
     @staticmethod
     def _now():
@@ -131,7 +133,14 @@ class FeuScenario:
         return max(5.0, self._distance)
 
     def _mettre_a_jour_feu(self, demande):
-        """Machine à états : durée minimale de vert, mode auto/forcé, bouton piéton."""
+        """Machine à états : durée minimale de vert, mode auto/forcé, bouton piéton.
+
+        Le bouton piéton (ou un piéton auto détecté) agit IMMÉDIATEMENT quand le
+        feu est vert : il interrompt le vert sans attendre la durée minimale, pour
+        que l'action de l'utilisateur soit visible tout de suite. Le vert minimal
+        ne s'applique qu'au déclenchement automatique (le feu ne passe pas orange
+        tout seul trop tôt).
+        """
         now = self._now()
         if self.mode == 1:  # VERT forcé : le piéton attend
             self._feu = FEU_VERT
@@ -143,10 +152,12 @@ class FeuScenario:
             self._pending = False
         elif self._feu == FEU_VERT:
             if demande:
-                self._pending = True  # le passage reste demandé même si le piéton repart
-            if self._pending and now - self._cycle_start >= self.duree_vert:
+                # Demande (piéton détecté OU bouton) : on passe au orange immédiatement.
+                # Sans demande, le feu RESTE VERT (comportement d'un vrai feu) :
+                # il ne doit jamais cycler tout seul en boucle.
                 self._feu = FEU_ORANGE
                 self._phase_until = now + self.DUREE_ORANGE
+                self._pending = False
         elif self._feu == FEU_ORANGE and now >= self._phase_until:
             self._feu = FEU_ROUGE
             self._phase_until = now + self.DUREE_ROUGE
@@ -157,13 +168,17 @@ class FeuScenario:
         return self._feu
 
     def etat(self):
-        """Renvoie (distance_cm, pedestrian 0/1, feu 0/1/2)."""
+        """Renvoie (distance_cm, pedestrian 0/1, feu 0/1/2, compteur)."""
         distance = round(self._nouvelle_distance(), 1)
         pedestrian = 1 if distance < self.seuil else 0
+        # Comptabilise un passage sur le front montant du piéton (comme le sketch ESP32)
+        if pedestrian == 1 and self._ped_prec == 0:
+            self._compteur += 1
+        self._ped_prec = pedestrian
         appui = self._appui
         self._appui = False
         feu = self._mettre_a_jour_feu(bool(pedestrian) or appui)
-        return distance, pedestrian, feu
+        return distance, pedestrian, feu, self._compteur
 
 
 def envoyer(base, token, key, value):
@@ -220,7 +235,7 @@ def main():
         interval = args.interval if args.interval is not None else 1.0
         scenario = FeuScenario(seuil=args.seuil)
         print(f"Mode FEU INTELLIGENT — seuil de détection : {scenario.seuil:g} cm")
-        print("Le feu passe VERT → ORANGE (2 s) → ROUGE (6 s) quand un piéton s'approche.")
+        print("Le feu passe VERT → ORANGE (3 s) → ROUGE (10 s) quand un piéton s'approche.")
         print("Commandes lues chaque seconde depuis la plateforme : durée du vert, mode, bouton Piéton.")
     else:
         interval = args.interval if args.interval is not None else 3.0
@@ -244,12 +259,13 @@ def main():
                     pass  # backend indisponible ponctuellement -> valeurs courantes conservées
                 scenario.appliquer_commandes(duree, mode, bouton)
 
-                distance, pedestrian, feu = scenario.etat()
-                for key, value in (("distance", distance), ("pedestrian", pedestrian), ("feu", feu)):
+                distance, pedestrian, feu, compteur = scenario.etat()
+                for key, value in (("distance", distance), ("pedestrian", pedestrian), ("feu", feu), ("compteur_pietons", compteur)):
                     if key in keys:
                         envoyer(args.base, args.token, key, value)
                 print(f"[{time.strftime('%H:%M:%S')}] distance={distance} cm · "
                       f"piéton={'OUI ' if pedestrian else 'NON '}· feu={NOMS_FEU[feu]} · "
+                      f"passages={compteur} · "
                       f"mode={NOMS_MODE.get(scenario.mode, '?')} (vert {scenario.duree_vert:g} s)")
             else:
                 for s in streams:

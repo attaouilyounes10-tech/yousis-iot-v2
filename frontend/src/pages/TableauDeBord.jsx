@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useLiveData } from '../hooks/useLiveData.jsx';
 import { fmtTime, fmtValue } from '../lib/format.js';
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 // Valeur affichée du seuil (correspond au --seuil par défaut du simulateur)
 const SEUIL_DEFAUT = 80;
@@ -137,6 +137,7 @@ export default function TableauDeBord() {
   const dist = liveData?.[byKey.distance];
   const ped = liveData?.[byKey.pedestrian];
   const feu = liveData?.[byKey.feu];
+  const compteur = liveData?.[byKey.compteur_pietons];
   const feuVal = feu ? feu.value : undefined;
   const distVal = dist ? dist.value : undefined;
   const pedVal = ped ? ped.value : undefined;
@@ -213,6 +214,7 @@ export default function TableauDeBord() {
       await api.addDatastream(d.id, { key: 'duree_vert', unit: 's' });
       await api.addDatastream(d.id, { key: 'mode', unit: '' });
       await api.addDatastream(d.id, { key: 'bouton_pieton', unit: '' });
+      await api.addDatastream(d.id, { key: 'compteur_pietons', unit: '' });
       localStorage.setItem('yousis_feu_device', String(d.id));
       setCreated({ token: d.token });
       setSelectedId(String(d.id));
@@ -437,11 +439,17 @@ export default function TableauDeBord() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={distPoints.slice(-NB_MAX)} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                       <XAxis dataKey="t" tickFormatter={(t) => fmtTime(t)} tick={{ fontSize: 10, fill: '#64748b' }} stroke="#1e293b" minTickGap={40} />
-                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} stroke="#1e293b" width={34} />
+                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} stroke="#1e293b" width={34} domain={[0, 'dataMax + 20']} />
                       <Tooltip
                         contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 12, fontSize: 12 }}
                         labelFormatter={(t) => fmtTime(t)}
                         formatter={(v) => [`${fmtValue(v)} cm`, 'Distance']}
+                      />
+                      <ReferenceLine
+                        y={SEUIL_DEFAUT}
+                        stroke="#ef4444"
+                        strokeDasharray="5 4"
+                        label={{ value: `Seuil ${SEUIL_DEFAUT} cm`, position: 'insideTopRight', fill: '#f87171', fontSize: 10 }}
                       />
                       <Line type="monotone" dataKey="v" stroke="#22d3ee" strokeWidth={2} dot={false} isAnimationActive={false} />
                     </LineChart>
@@ -459,6 +467,19 @@ export default function TableauDeBord() {
 
           {/* Ligne 2 : commandes + état/journal */}
           <div className="mt-5 grid gap-5 lg:grid-cols-3">
+            {/* ---- Compteur de passages piétons ---- */}
+            <div className={`${tileCard} lg:col-span-3`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-4xl">🚶</span>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wider text-slate-500">Passages piétons comptabilisés</p>
+                    <p className="text-3xl font-black text-cyan-300">{compteur ? compteur.value : 0}</p>
+                  </div>
+                </div>
+                <span className="text-xs text-slate-500">Compté côté device (broche 14 + ultrason), affiché en temps réel</span>
+              </div>
+            </div>
             {/* ---- Commandes du système ---- */}
             <div className={tileCard}>
               <h3 className={`${tileTitle} mb-4`}>🎛️ Commandes du système</h3>

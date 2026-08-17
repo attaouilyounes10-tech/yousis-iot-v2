@@ -64,3 +64,18 @@ CREATE TABLE IF NOT EXISTS widgets (
   config        TEXT DEFAULT '{}', -- JSON {min,max,step} pour le slider
   position      INTEGER DEFAULT 0
 );
+
+-- Journal des cycles du feu (enregistré en temps réel, persistant)
+-- Une ligne = un changement d'état du feu (ROUGE/VERT/ORANGE/PIETON).
+-- Permet d'afficher l'historique des cycles (vue « Cycles ») et de
+-- compter les passages piétons, sans dépendre de ThingSpeak.
+CREATE TABLE IF NOT EXISTS feu_cycles (
+  id            INTEGER PRIMARY KEY,
+  device_id     INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  etat          INTEGER NOT NULL,  -- 0=vert, 1=orange, 2=rouge, 3=pieton
+  pedestrian    INTEGER NOT NULL DEFAULT 0, -- 1 si c'était un passage piéton
+  distance      REAL,              -- distance mesurée à l'entrée dans l'état
+  compteur      INTEGER,           -- compteur_pietons du device à l'entrée dans l'état
+  created_at    INTEGER NOT NULL   -- epoch ms
+);
+CREATE INDEX IF NOT EXISTS idx_cycles_dev_time ON feu_cycles(device_id, created_at DESC);

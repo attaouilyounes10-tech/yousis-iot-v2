@@ -79,6 +79,25 @@ devicesRouter.delete('/:id', (req, res) => {
   res.status(204).end();
 });
 
+// ==== Historique des cycles du feu (JWT, vue « Cycles ») ====
+devicesRouter.get('/:id/cycles', (req, res) => {
+  const device = getDeviceOr404(req.user.id, req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device introuvable' });
+  const limit = Math.min(parseInt(req.query.limit || '500', 10) || 500, 2000);
+  const rows = db
+    .prepare('SELECT etat, pedestrian, distance, compteur, created_at AS createdAt FROM feu_cycles WHERE device_id = ? ORDER BY id DESC LIMIT ?')
+    .all(device.id, limit);
+  res.json(rows.reverse());
+});
+
+// ==== Vider l'historique des cycles du feu (JWT, vue « Cycles ») ====
+devicesRouter.delete('/:id/cycles', (req, res) => {
+  const device = getDeviceOr404(req.user.id, req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device introuvable' });
+  db.prepare('DELETE FROM feu_cycles WHERE device_id = ?').run(device.id);
+  res.status(204).end();
+});
+
 // ==== Ajouter un datastream à un device ====
 devicesRouter.post('/:id/datastreams', (req, res) => {
   const device = getDeviceOr404(req.user.id, req.params.id);

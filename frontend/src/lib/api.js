@@ -43,6 +43,9 @@ export const api = {
   // Datastreams
   setThresholds: (dsId, body) => req('PATCH', `/datastreams/${dsId}/thresholds`, body),
   getHistory: (dsId, limit = 100) => req('GET', `/datastreams/${dsId}/history?limit=${limit}`),
+  // Cycles du feu (persistant) — vue « Cycles »
+  getCycles: (deviceId, limit = 500) => req('GET', `/devices/${deviceId}/cycles?limit=${limit}`),
+  clearCycles: (deviceId) => req('DELETE', `/devices/${deviceId}/cycles`),
   // Dernier état vu par le device (token) — renvoie aussi la dernière commande reçue
   getLatest: (token) => req('GET', `/devices/${token}/latest`),
 

@@ -44,6 +44,19 @@ export default function Devices() {
     }
   }
 
+  async function del(device) {
+    setBusy(true);
+    setError('');
+    try {
+      await api.deleteDevice(device.id);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Le statut temps réel (WebSocket) prime sur la valeur chargée
   function online(id) {
     if (deviceStatus && id in deviceStatus) return deviceStatus[id];
@@ -89,7 +102,7 @@ export default function Devices() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {devices.map((d) => (
-          <DeviceCard key={d.id} device={{ ...d, online: online(d.id) }} />
+          <DeviceCard key={d.id} device={{ ...d, online: online(d.id) }} onDelete={del} />
         ))}
       </div>
 

@@ -16,6 +16,15 @@ const { emitToUser } = require('../emit');
 
 const router = express.Router();
 
+// Désambiguïsation : les routes /devices/:token/* (token device, ex. hex 32 car.)
+// ne doivent PAS capturer un id numérique (ex. /devices/2/cycles) destiné au
+// routeur JWT monté juste après. Un token purement numérique est renvoyé au
+// routeur suivant (next('router')) ; un vrai token device poursuit ici.
+router.use('/devices/:token', (req, res, next) => {
+  if (/^\d+$/.test(req.params.token)) return next('router');
+  next();
+});
+
 function deviceFromToken(req) {
   const token = req.headers['x-device-token'];
   if (!token) return null;
@@ -48,14 +57,35 @@ router.post('/data', (req, res) => {
   if (!ds) return res.status(404).json({ error: `Datastream '${key}' inconnu pour ce device` });
 
   const now = Date.now();
+  const io = req.app.locals.io;
 
   // 1) Sauvegarde + cache + dernière activité
   db.prepare('INSERT INTO data_points (datastream_id, value, created_at) VALUES (?, ?, ?)').run(ds.id, value, now);
   db.prepare('UPDATE devices SET last_seen_at = ? WHERE id = ?').run(now, device.id);
   remember(ds.id, value, now);
 
+  // 1bis) Enregistrement du journal des cycles du feu (vue « Cycles »)
+  // On ne log que les changements d'état du feu (datastream 'feu'),
+  // en comparant avec la dernière ligne enregistrée pour ce device.
+  if (ds.key === 'feu') {
+    const dernier = db.prepare('SELECT etat FROM feu_cycles WHERE device_id = ? ORDER BY id DESC LIMIT 1').get(device.id);
+    if (!dernier || dernier.etat !== value) {
+      // Récupère la distance courante (si connue) pour le contexte du cycle
+      const dDist = db.prepare('SELECT value FROM data_points dp JOIN datastreams ds ON ds.id = dp.datastream_id WHERE ds.device_id = ? AND ds.key = ? ORDER BY dp.id DESC LIMIT 1')
+        .get(device.id, 'distance');
+      const pedData = db.prepare('SELECT value FROM data_points dp JOIN datastreams ds ON ds.id = dp.datastream_id WHERE ds.device_id = ? AND ds.key = ? ORDER BY dp.id DESC LIMIT 1')
+        .get(device.id, 'pedestrian');
+      // Compteur de passages piétons (envoyé par le device, fiable) pour la synthèse
+      const cData = db.prepare('SELECT value FROM data_points dp JOIN datastreams ds ON ds.id = dp.datastream_id WHERE ds.device_id = ? AND ds.key = ? ORDER BY dp.id DESC LIMIT 1')
+        .get(device.id, 'compteur_pietons');
+      db.prepare('INSERT INTO feu_cycles (device_id, etat, pedestrian, distance, compteur, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(device.id, value, pedData ? pedData.value : 0, dDist ? dDist.value : null, cData ? cData.value : null, now);
+      // Notifie en temps réel les clients de la vue Cycles
+      emitToUser(io, device.user_id, 'cycle:new', { deviceId: device.id, etat: value, createdAt: now });
+    }
+  }
+
   // 2) Diffusion temps réel à l'utilisateur propriétaire et au device
-  const io = req.app.locals.io;
   const payload = { datastreamId: ds.id, deviceId: device.id, value, createdAt: now };
   emitToUser(io, device.user_id, 'data:update', payload);
 
@@ -106,6 +136,19 @@ router.get('/devices/:token/history', (req, res) => {
     .all(ds.id, limit);
 
   res.json(rows.reverse());
+});
+
+// ==== Historique des cycles du feu (pour la vue « Cycles », persistant) ====
+// Accessible par token device (comme /latest) : la carte ou le dashboard lit.
+router.get('/devices/:token/cycles', (req, res) => {
+  const device = db.prepare('SELECT * FROM devices WHERE token = ?').get(req.params.token);
+  if (!device) return res.status(404).json({ error: 'Device introuvable' });
+
+  const limit = Math.min(parseInt(req.query.limit || '200', 10) || 200, 1000);
+  const rows = db
+    .prepare('SELECT etat, pedestrian, distance, created_at AS createdAt FROM feu_cycles WHERE device_id = ? ORDER BY id DESC LIMIT ?')
+    .all(device.id, limit);
+  res.json(rows.reverse()); // du plus ancien au plus récent
 });
 
 module.exports = router;

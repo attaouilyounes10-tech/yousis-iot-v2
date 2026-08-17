@@ -23,4 +23,11 @@ const db = new DatabaseSync(absPath);
 const schema = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
 db.exec(schema);
 
+// Migrations incrémentales (idempotentes) pour les colonnes ajoutées après coup
+try {
+  db.exec('ALTER TABLE feu_cycles ADD COLUMN compteur INTEGER');
+} catch (_) {
+  /* colonne déjà présente : rien à faire */
+}
+
 module.exports = db;

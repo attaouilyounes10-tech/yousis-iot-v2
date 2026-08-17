@@ -4,8 +4,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-export default function DeviceCard({ device }) {
+export default function DeviceCard({ device, onDelete }) {
   const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   async function copyToken() {
     try {
@@ -55,6 +56,29 @@ export default function DeviceCard({ device }) {
         >
           {copied ? '✓ Copié' : 'Copier'}
         </button>
+        {!confirming ? (
+          <button
+            onClick={() => setConfirming(true)}
+            className="rounded-lg bg-red-500/15 px-2 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/25"
+          >
+            🗑 Supprimer
+          </button>
+        ) : (
+          <span className="flex items-center gap-1">
+            <button
+              onClick={() => { setConfirming(false); onDelete?.(device); }}
+              className="rounded-lg bg-red-500 px-2 py-1 text-xs font-semibold text-white hover:bg-red-400"
+            >
+              Oui
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              className="rounded-lg bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-700"
+            >
+              Non
+            </button>
+          </span>
+        )}
       </div>
     </div>
   );

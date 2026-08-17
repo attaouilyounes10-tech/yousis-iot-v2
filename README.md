@@ -37,7 +37,8 @@ yousis-iot-v2/
 ├── simulator/
 │   └── send_data.py      # script de démo sans matériel (mode capteurs ou feu)
 └── arduino/
-    └── esp32_yousis_v2.ino  # vrai ESP32 + HC-SR04 (optionnel, même logique)
+    ├── esp32_yousis_v2.ino  # vrai ESP32 + HC-SR04 (mode générique)
+    └── esp32_yousis_feu.ino # vrai ESP32 feu tricolore (Blynk→YOUXIS, avec compteur piétons)
 ```
 
 ## 🚀 Lancement
@@ -128,23 +129,44 @@ La plateforme peut simuler le **feu tricolore intelligent** (capteur HC-SR04) et
    cd simulator
    python send_data.py --token <TOKEN>
    ```
-4. Retourne sur **http://localhost:5173/tableau-bord** : la page se met à jour **en temps réel**.
+4. Retourne sur **🚦 Tableau de bord** : la page se met à jour **en temps réel**.
    Quand un piéton s'approche (distance < seuil), le feu passe
-   **vert → orange (2 s) → rouge (6 s)** pendant que le piéton traverse, puis revient au vert.
-   Un **graphique** trace la distance et un **journal d'événements** enregistre chaque détection.
+   **vert → orange (3 s) → rouge (10 s)** pendant que le piéton traverse, puis revient au vert.
 
-**Commander le feu depuis le PC comme depuis le téléphone** :
-- **Durée du vert** (slider 1-30 s) : le feu reste vert au moins cette durée avant qu'un piéton
-  puisse déclencher l'orange.
-- **Mode système** : Auto · **Vert forcé** (les voitures passent) · **Rouge forcé** (le piéton traverse).
-- **Bouton Piéton** : déclenche un passage à la demande (comme un bouton d'appel piéton).
+La partie feu intelligente est **divisée en 2 pages** (le site remplace à la fois Blynk *et*
+ThingSpeak) :
+
+### 🚦 Tableau de bord — supervision & contrôle (style Blynk)
+Page **interactive** qui supervise et commande le système en temps réel :
+- **Compteur de passages piétons** (🚶) : incrémenté côté device à chaque front montant du
+  piéton (broche 14 + ultrason), affiché en temps réel.
+- **Graphique** de la distance + **journal d'événements** des détections.
+- **Commandes** (sliders/boutons) :
+  - **Durée du vert** (slider 1-30 s) : le feu reste vert au moins cette durée avant qu'un
+    piéton puisse déclencher l'orange.
+  - **Mode système** : Auto · **Vert forcé** (les voitures passent) · **Rouge forcé** (le
+    piéton traverse).
+  - **Bouton Piéton** : déclenche un passage à la demande (comme un bouton d'appel piéton).
+
+### 📈 Cycles — historique persistant (style ThingSpeak)
+Page qui **enregistre en temps réel les cycles du feu** (le rôle de ThingSpeak) :
+- **3 compteurs** : passages piétons totaux, cycles enregistrés, état actuel du feu.
+- **Graphique** de l'évolution des états (vert / orange / rouge) dans le temps.
+- **Journal persistant** de tous les changements d'état (heure · état · piéton · distance),
+  fusionnant l'historique sauvegardé en base et les événements WebSocket live.
+- Les cycles sont stockés en base (`feu_cycles`) et consultables via l'API
+  `GET /api/devices/:id/cycles` (JWT) ou `GET /api/devices/:token/cycles`.
 
 **Logique côté device** : le simulateur (comme un vrai ESP32) mesure la distance, détecte le
 piéton, pilote le feu **et lit chaque seconde les commandes** du tableau de bord via
-`GET /api/devices/:token/latest`. La plateforme affiche et commande, le device décide.
-→ avec un vrai ESP32, utilise `arduino/esp32_yousis_v2.ino` (HC-SR04 : TRIG = GPIO 13,
-ECHO = GPIO 12), qui envoie les 3 valeurs avec l'en-tête `X-Device-Token` et applique les
-commandes `duree_vert` / `mode`.
+`GET /api/devices/:token/latest`, puis **compte les passages piétons** (front montant) et
+envoie `compteur_pietons`. La plateforme affiche, commande et **journalise**, le device décide.
+
+→ avec un vrai ESP32, utilise **`arduino/esp32_yousis_feu.ino`** : il adapte l'ancien sketch
+Blynk + ThingSpeak vers YOUXIS. Brochage : ROUGE 25 · ORANGE 26 · VERT 27 · PIET_R 32 ·
+PIET_V 33 · BOUTON 14 · TRIG 4 · ECHO 35 · BUZZER 12. Remplis `WIFI_SSID`, `WIFI_PASS`,
+`BACKEND_HOST`, `BACKEND_PORT` et `DEVICE_TOKEN`, puis uploade. (L'ancien
+`esp32_yousis_v2.ino` — HC-SR04 TRIG 13 / ECHO 12 — reste valable pour le mode générique.)
 
 Paramètres du simulateur : `--seuil 80` (distance de détection en cm), `--interval 1`
 (secondes entre deux envois ; le mode feu passe automatiquement à 1 s).
@@ -165,10 +187,17 @@ curl http://localhost:3001/api/devices/<TOKEN>/latest
 
 # Historique
 curl "http://localhost:3001/api/devices/<TOKEN>/history?key=distance&limit=50"
+
+# Journal persistant des cycles du feu (token device, ex. depuis un ESP32/carte)
+curl "http://localhost:3001/api/devices/<TOKEN>/cycles?limit=200"
 ```
 
 Le device lit les commandes (bouton/slider) dans `/latest` : pour une valeur de
 sortie, c'est la dernière commande reçue qui est renvoyée.
+
+L'historique des cycles est aussi accessible côté utilisateur (JWT) :
+`GET /api/devices/:id/cycles?limit=500` renvoie tous les changements d'état du feu
+(`etat` 0/1/2, `pedestrian`, `distance`, `createdAt`), du plus ancien au plus récent.
 
 ## ⚙️ Configuration
 

@@ -14,6 +14,7 @@ export function LiveDataProvider({ token, children }) {
   const [liveData, setLiveData] = useState({});
   const [alerts, setAlerts] = useState([]);
   const [deviceStatus, setDeviceStatus] = useState({});
+  const [cycles, setCycles] = useState([]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -34,13 +35,22 @@ export function LiveDataProvider({ token, children }) {
     socket.on('device:status', (s) => {
       setDeviceStatus((prev) => ({ ...prev, [s.deviceId]: s.online }));
     });
+    socket.on('cycle:new', (c) => {
+      // c = { deviceId, etat, createdAt } — ajouté en tête pour la vue Cycles
+      setCycles((prev) => [{ ...c }, ...prev].slice(0, 1000));
+    });
 
     return () => {
       socket.disconnect();
     };
   }, [token]);
 
-  return <LiveContext.Provider value={{ liveData, alerts, deviceStatus }}>{children}</LiveContext.Provider>;
+  // Vide l'historique live des cycles (utilisé par « Remettre à 0 »)
+  function clearCyclesLive() {
+    setCycles([]);
+  }
+
+  return <LiveContext.Provider value={{ liveData, alerts, deviceStatus, cycles, clearCyclesLive }}>{children}</LiveContext.Provider>;
 }
 
 export const useLiveData = () => useContext(LiveContext);
