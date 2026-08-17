@@ -1,0 +1,10 @@
+{
+  "name": "yousis-iot-v2",
+  "version": "1.0.0",
+  "private": true,
+  "description": "YOUXIS IOT v2 — monorepo (backend Node + frontend React) déployé en un seul service Railway",
+  "scripts": {
+    "build": "npm --prefix backend install && npm --prefix frontend install --include=dev && npm --prefix frontend run build",
+    "start": "node backend/src/server.js"
+  }
+}
