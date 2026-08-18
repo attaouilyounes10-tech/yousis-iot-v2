@@ -32,21 +32,26 @@ devicesRouter.get('/', (req, res) => {
 
 // ==== Créer un device (+ son token unique + un datastream 'value' par défaut) ====
 devicesRouter.post('/', (req, res) => {
-  const name = String(req.body?.name || '').trim();
-  const type = String(req.body?.type || '').trim();
-  if (!name) return res.status(400).json({ error: 'Nom du device requis' });
+  try {
+    const name = String(req.body?.name || '').trim();
+    const type = String(req.body?.type || '').trim();
+    if (!name) return res.status(400).json({ error: 'Nom du device requis' });
 
-  const token = crypto.randomBytes(16).toString('hex');
-  const info = db
-    .prepare('INSERT INTO devices (user_id, name, type, token) VALUES (?, ?, ?, ?)')
-    .run(req.user.id, name, type || 'unknown', token);
+    const token = crypto.randomBytes(16).toString('hex');
+    const info = db
+      .prepare('INSERT INTO devices (user_id, name, type, token) VALUES (?, ?, ?, ?)')
+      .run(req.user.id, name, type || 'unknown', token);
 
-  // Un datastream 'value' par défaut pour que le device puisse envoyer tout de suite
-  db.prepare('INSERT INTO datastreams (device_id, key, unit, data_type) VALUES (?, ?, ?, ?)')
-    .run(info.lastInsertRowid, 'value', '', 'number');
+    // Un datastream 'value' par défaut pour que le device puisse envoyer tout de suite
+    db.prepare('INSERT INTO datastreams (device_id, key, unit, data_type) VALUES (?, ?, ?, ?)')
+      .run(info.lastInsertRowid, 'value', '', 'number');
 
-  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(info.lastInsertRowid);
-  res.status(201).json(withStatus(device));
+    const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(info.lastInsertRowid);
+    res.status(201).json(withStatus(device));
+  } catch (err) {
+    console.error('❌ POST /api/devices — erreur :', err && err.stack ? err.stack : err);
+    res.status(500).json({ error: 'Échec création device', message: err && err.message ? err.message : String(err) });
+  }
 });
 
 // ==== Détail d'un device (+ datastreams + widgets) ====

@@ -47,6 +47,16 @@ app.get('*', (req, res, next) => {
   });
 });
 
+// ===== Gestionnaire d'erreurs global (affiche le vrai message au client) =====
+// Sans ça, toute exception non gérée dans une route renvoie un 500 muet.
+app.use((err, req, res, next) => {
+  console.error('❌ ERREUR NON GÉRÉE :', err && err.stack ? err.stack : err);
+  res.status(500).json({
+    error: 'Erreur serveur',
+    message: err && err.message ? err.message : String(err),
+  });
+});
+
 // ===== WebSocket =====
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: allowedOrigins } });
