@@ -1,8 +1,8 @@
 // ============================================================
 // YOUXIS IOT — Error Boundary
-// Capture une erreur de rendu React et l'affiche à l'écran
-// (au lieu d'un écran blanc muet). Permet de diagnostiquer
-// rapidement le composant en cause.
+// Capture une erreur de rendu React ET les erreurs asynchrones
+// (WebSocket, fetch, timers) pour les afficher à l'écran au
+// lieu d'un écran blanc muet.
 // ============================================================
 import { Component } from 'react';
 
@@ -19,6 +19,19 @@ export default class ErrorBoundary extends Component {
   componentDidCatch(error, info) {
     // eslint-disable-next-line no-console
     console.error('💥 Erreur React capturée :', error, info);
+  }
+
+  // Capture les erreurs asynchrones (hors cycle de rendu React)
+  componentDidMount() {
+    this._onError = (e) => this.setState({ error: e.error || new Error(String(e.message)) });
+    this._onReject = (e) => this.setState({ error: e.reason || new Error('Promesse rejetée') });
+    window.addEventListener('error', this._onError);
+    window.addEventListener('unhandledrejection', this._onReject);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('error', this._onError);
+    window.removeEventListener('unhandledrejection', this._onReject);
   }
 
   render() {
