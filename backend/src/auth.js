@@ -27,7 +27,13 @@ function authRequired(req, res, next) {
 
   try {
     const payload = jwt.verify(token, SECRET);
-    req.user = { id: Number(payload.sub) };
+    const userId = Number(payload.sub);
+    // Le JWT est valide mais l'utilisateur a pu disparaître de la base
+    // (base recréée / redéploiement) : on renvoie 401 clair au lieu d'un 500 FK.
+    const db = require('../db');
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+    if (!user) return res.status(401).json({ error: 'Compte introuvable — reconnectez-vous (la base a été réinitialisée).' });
+    req.user = { id: userId };
     next();
   } catch (_) {
     return res.status(401).json({ error: 'Token invalide ou expiré' });

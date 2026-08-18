@@ -3,7 +3,7 @@
 // Le token JWT est conservé dans le localStorage.
 // ============================================================
 import { createContext, useCallback, useContext, useState } from 'react';
-import { api, setToken } from './api.js';
+import { api, setToken, setOnUnauthorized } from './api.js';
 
 const AuthContext = createContext(null);
 
@@ -47,6 +47,11 @@ export function AuthProvider({ children }) {
     setTokenState(null);
     setUser(null);
   }, []);
+
+  // Si le backend renvoie 401 (compte disparu après réinit de la base), on déconnecte.
+  useState(() => {
+    setOnUnauthorized(() => logout());
+  });
 
   return <AuthContext.Provider value={{ token, user, login, register, logout }}>{children}</AuthContext.Provider>;
 }
