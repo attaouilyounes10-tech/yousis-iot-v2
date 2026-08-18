@@ -22,7 +22,10 @@ async function req(method, path, body) {
   if (res.status === 204) return null;
 
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error((data && data.error) || `Erreur HTTP ${res.status}`);
+  if (!res.ok) {
+    const detail = data && data.message ? ` — ${data.message}` : '';
+    throw new Error((data && data.error ? data.error : `Erreur HTTP ${res.status}`) + detail);
+  }
   return data;
 }
 
