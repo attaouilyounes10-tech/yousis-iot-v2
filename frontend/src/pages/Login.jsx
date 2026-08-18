@@ -8,7 +8,8 @@ import { useAuth } from '../lib/auth.jsx';
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  // Pré-remplit avec le dernier email utilisé (inscription ou connexion précédente)
+  const [email, setEmail] = useState(() => localStorage.getItem('yousis_last_email') || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -19,9 +20,10 @@ export default function Login() {
     setBusy(true);
     try {
       await login(email, password);
+      localStorage.setItem('yousis_last_email', email.trim());
       navigate('/');
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || 'Échec de la connexion');
     } finally {
       setBusy(false);
     }
@@ -37,14 +39,16 @@ export default function Login() {
           </h1>
         </div>
         <h2 className="mb-4 text-lg font-semibold">Connexion</h2>
-        <form onSubmit={submit} className="space-y-3">
+        <form onSubmit={submit} className="space-y-3" autoComplete="on">
           <input
             type="email" required placeholder="Email" value={email}
+            name="email" autoComplete="username" autoFocus
             onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
           />
           <input
             type="password" required placeholder="Mot de passe" value={password}
+            name="password" autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
           />

@@ -8,7 +8,7 @@ import { useAuth } from '../lib/auth.jsx';
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => localStorage.getItem('yousis_last_email') || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -19,9 +19,10 @@ export default function Register() {
     setBusy(true);
     try {
       await register(email, password);
+      localStorage.setItem('yousis_last_email', email.trim());
       navigate('/');
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || 'Échec de l’inscription');
     } finally {
       setBusy(false);
     }
@@ -37,14 +38,16 @@ export default function Register() {
           </h1>
         </div>
         <h2 className="mb-4 text-lg font-semibold">Créer un compte</h2>
-        <form onSubmit={submit} className="space-y-3">
+        <form onSubmit={submit} className="space-y-3" autoComplete="on">
           <input
             type="email" required placeholder="Email" value={email}
+            name="email" autoComplete="username" autoFocus
             onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
           />
           <input
             type="password" required placeholder="Mot de passe (6 caractères min)" value={password}
+            name="password" autoComplete="new-password"
             onChange={(e) => setPassword(e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
           />

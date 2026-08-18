@@ -30,17 +30,16 @@ async function req(method, path, body) {
 
   const data = await res.json().catch(() => null);
 
-  // 401 : compte introuvable (base réinitialisée) ou token invalide.
-  // On déconnecte pour forcer une reconnexion propre.
-  if (res.status === 401) {
-    if (onUnauthorized) onUnauthorized();
-    const detail = data && data.message ? ` — ${data.message}` : '';
-    throw new Error((data && data.error ? data.error : 'Authentification requise') + detail);
-  }
-
   if (!res.ok) {
-    const detail = data && data.message ? ` — ${data.message}` : '';
-    throw new Error((data && data.error ? data.error : `Erreur HTTP ${res.status}`) + detail);
+    // Garde-fou : jamais de message undefined (une chaîne vide au pire).
+    const msg =
+      (data && data.error ? String(data.error) : `Erreur HTTP ${res.status}`) +
+      (data && data.message ? ` — ${String(data.message)}` : '');
+
+    // 401 : compte introuvable (base réinitialisée) ou token invalide.
+    // On déconnecte pour forcer une reconnexion propre.
+    if (res.status === 401 && onUnauthorized) onUnauthorized();
+    throw new Error(msg);
   }
   return data;
 }

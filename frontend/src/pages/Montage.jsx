@@ -6,8 +6,18 @@
 // (aucune dépendance ajoutée, fonctionne en dev comme en prod).
 // ============================================================
 import { useState } from 'react';
-import feuCode from '../../../arduino/esp32_youxis_feu.ino?raw';
 import { btn, copierSansBug } from '../lib/feu.jsx';
+
+// Import du sketch Arduino en texte brut (Vite « ?raw »).
+// try/catch : si le fichier n'est pas résolu au build (chemin fs non autorisé),
+// on évite de faire planter TOUT le bundle — on affiche un message à la place.
+let feuCode = '// (code Arduino indisponible)';
+try {
+  // eslint-disable-next-line import/no-unresolved
+  feuCode = require('../../../arduino/esp32_youxis_feu.ino?raw').default || feuCode;
+} catch (_) {
+  /* garde le placeholder */
+}
 
 const BROCHES = [
   { pin: 25, nom: 'ROUGE', role: 'Feu voitures', couleur: '#ef4444' },

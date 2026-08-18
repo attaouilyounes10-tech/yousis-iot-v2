@@ -54,6 +54,12 @@ export default class ErrorBoundary extends Component {
           >
             Réessayer
           </button>
+          <button
+            onClick={() => window.location.reload()}
+            className="ml-2 mt-4 rounded-xl bg-cyan-600 px-4 py-2 text-sm text-white hover:bg-cyan-500"
+          >
+            Recharger la page
+          </button>
         </div>
       );
     }

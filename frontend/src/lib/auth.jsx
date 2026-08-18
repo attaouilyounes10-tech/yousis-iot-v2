@@ -2,7 +2,7 @@
 // YOUXIS IOT — Contexte d'authentification
 // Le token JWT est conservé dans le localStorage.
 // ============================================================
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api, setToken, setOnUnauthorized } from './api.js';
 
 const AuthContext = createContext(null);
@@ -19,10 +19,10 @@ export function AuthProvider({ children }) {
   const [token, setTokenState] = useState(() => localStorage.getItem('yousis_token'));
   const [user, setUser] = useState(() => readStored('yousis_user'));
 
-  // Le client API connaît toujours le token courant
-  useState(() => {
+  // Le client API connaît toujours le token courant (synchronisé à chaque changement)
+  useEffect(() => {
     setToken(token);
-  });
+  }, [token]);
 
   function storeSession(data) {
     localStorage.setItem('yousis_token', data.token);
