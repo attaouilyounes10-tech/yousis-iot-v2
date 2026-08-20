@@ -1,50 +1,40 @@
 // ============================================================
 // YOUXIS IOT — Routeur principal
-// Pas de token => pages publiques (login/register) uniquement.
-// Avec token => app privée + données temps réel.
+// Mode sécurisé : chaque visite exige une authentification.
+// Routes protégées via RequireAuth, token passé à LiveDataProvider.
 // ============================================================
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import { useAuth } from './lib/auth.jsx';
 import { LiveDataProvider } from './hooks/useLiveData.jsx';
+import { RequireAuth } from './hooks/RequireAuth.jsx';
 import Layout from './components/Layout.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
-import Login from './pages/Login.jsx';
-import Register from './pages/Register.jsx';
 import Devices from './pages/Devices.jsx';
 import DeviceDetail from './pages/DeviceDetail.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import TableauDeBord from './pages/TableauDeBord.jsx';
 import Feu from './pages/Feu.jsx';
 import Cycles from './pages/Cycles.jsx';
 import Montage from './pages/Montage.jsx';
+import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
 
 export default function App() {
   const { token } = useAuth();
-
-  if (!token) {
-    return (
-      <Routes>
-        <Route path="/register" element={<Register />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
 
   return (
     <LiveDataProvider token={token}>
       <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="devices" element={<Devices />} />
-            <Route path="devices/:id" element={<DeviceDetail />} />
-            <Route path="tableau-bord" element={<TableauDeBord />} />
-            <Route path="feu" element={<Feu />} />
-            <Route path="cycles" element={<Cycles />} />
-            <Route path="montage" element={<Montage />} />
+            <Route index element={<RequireAuth><Feu /></RequireAuth>} />
+            <Route path="devices" element={<RequireAuth><Devices /></RequireAuth>} />
+            <Route path="devices/:id" element={<RequireAuth><DeviceDetail /></RequireAuth>} />
+            <Route path="feu" element={<RequireAuth><Feu /></RequireAuth>} />
+            <Route path="cycles" element={<RequireAuth><Cycles /></RequireAuth>} />
+            <Route path="montage" element={<RequireAuth><Montage /></RequireAuth>} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="login" element={<Login />} />
+          <Route path="register" element={<Register />} />
+          <Route path="*" element={<RequireAuth><Feu /></RequireAuth>} />
         </Routes>
       </ErrorBoundary>
     </LiveDataProvider>

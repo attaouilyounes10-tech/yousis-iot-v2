@@ -19,7 +19,7 @@ function safeJson(raw) {
   }
 }
 
-// Un widget + les infos utiles (device, datastream) — uniquement si propriétaire
+// Un widget + les infos utiles (device, datastream) — visible par tous (sans login)
 function getWidget(req) {
   return db
     .prepare(
@@ -27,9 +27,9 @@ function getWidget(req) {
        FROM widgets w
        JOIN devices d    ON d.id  = w.device_id
        JOIN datastreams ds ON ds.id = w.datastream_id
-       WHERE w.id = ? AND w.user_id = ?`
+       WHERE w.id = ?`
     )
-    .get(Number(req.params.id), req.user.id);
+    .get(Number(req.params.id));
 }
 
 // ==== Liste des widgets (+ dernière valeur connue) ====
@@ -40,9 +40,9 @@ router.get('/', (req, res) => {
        FROM widgets w
        JOIN devices d    ON d.id  = w.device_id
        JOIN datastreams ds ON ds.id = w.datastream_id
-       WHERE w.user_id = ? ORDER BY w.position, w.id`
+       ORDER BY w.position, w.id`
     )
-    .all(req.user.id);
+    .all();
 
   res.json(rows.map((w) => ({ ...w, config: safeJson(w.config), last: lastOf(w.datastream_id) })));
 });
@@ -54,12 +54,12 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: `Type de widget invalide (${TYPES.join(', ')})` });
   }
 
-  // Le datastream doit appartenir à l'utilisateur…
+  // Le datastream doit exister (sans login : tous les datastreams sont accessibles)
   const ds = db
     .prepare(
-      'SELECT ds.* FROM datastreams ds JOIN devices d ON d.id = ds.device_id WHERE ds.id = ? AND d.user_id = ?'
+      'SELECT ds.* FROM datastreams ds JOIN devices d ON d.id = ds.device_id WHERE ds.id = ?'
     )
-    .get(Number(datastream_id), req.user.id);
+    .get(Number(datastream_id));
   if (!ds) return res.status(400).json({ error: 'Datastream introuvable' });
 
   // … et correspondre au device choisi

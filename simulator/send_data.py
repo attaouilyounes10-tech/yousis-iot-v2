@@ -30,11 +30,26 @@ Le token se copie dans l'interface YOUXIS IOT (page Devices → le code affiché
 """
 
 import argparse
+import atexit
 import json
+import os
 import random
+import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
+
+# Sur Windows, la console par défaut (cp1252) refuse les caractères UTF-8
+# (✓, ✗, ·, →…) et lève UnicodeEncodeError. On force UTF-8 sur stdout/stderr
+# pour que le simulateur s'affiche correctement quel que soit l'OS.
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 DEFAULT_BASE = "http://localhost:3001"
 SEUIL_DEFAULT = 80  # cm
@@ -86,7 +101,7 @@ class FeuScenario:
     PIETON_DUREE = (12.0, 18.0)    # s : présence du piéton (reste détecté le temps de traverser)
     PROCHAIN_PIETON = (45.0, 75.0)  # s de vert calme avant le piéton suivant (cycles bien espacés)
 
-    def __init__(self, seuil=SEUIL_DEFAULT):
+    def __init__(self, seuil=SEUIL_DEFAULT, compteur_init=0):
         self.seuil = seuil
         self.duree_vert = 5.0      # s : durée minimale du vert (commandée depuis la plateforme)
         self.mode = 0              # 0 auto · 1 vert forcé · 2 rouge forcé · 3 maintenance
@@ -99,7 +114,7 @@ class FeuScenario:
         self._pending = False      # un passage a été demandé (piéton ou bouton)
         self._appui = False        # impulsion du bouton « Piéton » en attente
         self._bouton_prec = 0      # valeur précédente du bouton (détection de front)
-        self._compteur = 0         # nombre total de passages piétons comptabilisés
+        self._compteur = int(compteur_init)  # repris depuis le backend (sinon 0)
         self._ped_prec = 0         # valeur précédente du piéton (détection de front)
 
     @staticmethod
@@ -219,6 +234,10 @@ def main():
                         help=f"Seuil de détection piéton en cm (mode feu, défaut {SEUIL_DEFAULT})")
     args = parser.parse_args()
 
+    # Verrou : une seule instance par token (sinon 2 compteurs indépendants
+    # s'écrivent par-dessus → le compteur « saute » et diverge du site).
+    make_lock(args.token)
+
     print(f"YOUXIS IOT simulateur — backend : {args.base}")
     print("Découverte des datastreams du device…")
 
@@ -248,8 +267,9 @@ def main():
 
     if feu_mode:
         interval = args.interval if args.interval is not None else 1.0
-        scenario = FeuScenario(seuil=args.seuil)
-        print(f"Mode FEU INTELLIGENT — seuil de détection : {scenario.seuil:g} cm")
+        compteur_init = lire_compteur(args.base, args.token)
+        scenario = FeuScenario(seuil=args.seuil, compteur_init=compteur_init)
+        print(f"Mode FEU INTELLIGENT — seuil de détection : {scenario.seuil:g} cm · compteur repris à {scenario._compteur}")
         print("Le feu passe VERT → ORANGE (3 s) → ROUGE (10 s) quand un piéton s'approche.")
         print("Commandes lues chaque seconde depuis la plateforme : durée du vert, mode, bouton Piéton.")
     else:
@@ -297,6 +317,44 @@ def main():
             time.sleep(interval)
     except KeyboardInterrupt:
         print("\nSimulateur arrêté.")
+
+
+def make_lock(token):
+    """Verrou sur le token : empêche 2 instances du même device de tourner
+    en parallèle (sinon chaque instance a son propre compteur et les valeurs
+    s'écrasent mutuellement → compteur qui saute côté site)."""
+    d = tempfile.gettempdir()
+    path = os.path.join(d, "yousis_sim_" + token + ".lock")
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        print(f"✗ Une autre instance tourne déjà pour ce token ({token[:8]}…).")
+        print("  Arrêtez-la (Ctrl+C) avant d'en relancer une.  → Arrêt.")
+        sys.exit(1)
+    os.write(fd, str(os.getpid()).encode())
+    os.close(fd)
+
+    def release():
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    atexit.register(release)
+    return release
+
+
+def lire_compteur(base, token):
+    """Reprend le compteur déjà comptabilisé côté backend (dernière valeur
+    de 'compteur_pietons') pour ne pas repartir de 0 à chaque lancement."""
+    try:
+        _, latest = request(base, "/api/devices/" + token + "/latest", token=token)
+        for s in latest.get("datastreams", []):
+            if s["key"] == "compteur_pietons" and s.get("value") is not None:
+                return int(float(s["value"]))
+    except Exception:
+        pass
+    return 0
 
 
 if __name__ == "__main__":

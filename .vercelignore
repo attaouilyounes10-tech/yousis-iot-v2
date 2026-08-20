@@ -1,0 +1,17 @@
+# Ignore backend pour le déploiement Vercel (frontend uniquement)
+backend/
+# Ignore la base de données locale
+*.db
+data/
+# Ignore les fichiers d'environnement locaux
+.env
+.env.local
+.env.*.local
+# Node modules
+node_modules/
+# Logs
+*.log
+# IDE
+.vscode/
+.idea/
+*.swp

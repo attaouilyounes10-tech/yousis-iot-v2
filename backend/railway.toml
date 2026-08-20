@@ -1,0 +1,16 @@
+# Railway configuration for backend
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/auth/me"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Variables d'environnement (à définir dans Railway Dashboard > Variables)
+# PORT=3001
+# JWT_SECRET=ton-secret-long-et-aleatoire
+# DB_PATH=/data/yousis.db
+# ALLOWED_ORIGINS=https://ton-frontend.vercel.app

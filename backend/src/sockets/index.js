@@ -11,9 +11,14 @@ const { isOnline } = require('../constants');
 module.exports = function attachSockets(io) {
   // 1) Authentification du socket
   io.use((socket, next) => {
+    // En mode « sans login », le client se connecte sans token : on bascule
+    // sur l'utilisateur public (DEFAULT_USER_ID) comme le reste de l'app.
+    // verifySocketToken(null/undefined/invalide) renvoie déjà l'utilisateur
+    // public au lieu de rejeter — c'est ce comportement « site ouvert » qu'on
+    // veut, sinon le WebSocket du navigateur est refusé et liveData reste vide
+    // (feu éteint, compteur à 0 sur les pages Feu et Tableau de bord).
     const token = socket.handshake.auth?.token;
-    const user = token ? verifySocketToken(token) : null;
-    if (!user) return next(new Error('unauthorized'));
+    const user = verifySocketToken(token);
     socket.data.userId = user.id;
     next();
   });

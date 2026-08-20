@@ -21,8 +21,16 @@ const ETAT = {
 
 const tile = 'rounded-3xl border border-slate-800 bg-slate-900/70 p-6';
 
+// États du mode système
+const MODES = [
+  { v: 0, label: 'Auto',        cls: 'bg-cyan-500 text-slate-950' },
+  { v: 1, label: 'Vert forcé',  cls: 'bg-emerald-500 text-slate-950' },
+  { v: 2, label: 'Rouge forcé', cls: 'bg-red-500 text-slate-950' },
+  { v: 3, label: 'Maintenance', cls: 'bg-amber-500 text-slate-950' },
+];
+
 export default function Cycles() {
-  const { cycles, clearCyclesLive } = useLiveData() || {};
+  const { cycles, clearAll, resetSignal } = useLiveData() || {};
   const [devices, setDevices] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [history, setHistory] = useState([]); // cycles chargés depuis la base
@@ -70,14 +78,34 @@ export default function Cycles() {
     }
   }
 
-  // Remettre à 0 : vide l'historique des cycles (base + live) pour le device
+  // Remettre à 0 : vide TOUT (base + live) et remet le comptage à 0 partout sur le site.
+  // Si selectedId est défini, on vide d'abord l'historique base pour ce device,
+  // puis on appelle clearAll() qui vide liveData (compteur, feu, distance, alerts, cycles)
+  // et incrémente resetSignal pour forcer les autres pages (Feu, Dashboard) à se mettre à 0.
   async function resetCycles() {
-    if (!selectedId) return;
+    if (!selectedId) {
+      // Pas de device sélectionné → clearAll direct (vide tout)
+      setBusy(true);
+      try {
+        await clearAll?.();
+        setHistory([]);
+        setError('');
+        setConfirmReset(false);
+        setBusy(false);
+      } catch (e) {
+        setError(e.message);
+        setBusy(false);
+      }
+      return;
+    }
     setBusy(true);
     try {
+      // 1) Vide l'historique base de données pour ce device
       await api.clearCycles(selectedId);
+      // 2) Vide TOUT le reste (liveData = compteur/feu/distance remis à 0 partout)
+      await clearAll?.();
+      // 3) Recharge l'historique base à zéro
       setHistory([]);
-      clearCyclesLive?.();
       setError('');
       setConfirmReset(false);
     } catch (e) {
@@ -147,6 +175,38 @@ export default function Cycles() {
         <div className="flex flex-wrap items-center gap-2">
           {device && (
             <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">{device.name}</span>
+          )}
+          {/* Sélecteur de mode système */}
+          <div className="ml-3 flex items-center gap-1">
+            <span className="text-xs text-slate-400">Mode :</span>
+            <button
+              onClick={() => api.setMode(selectedId, 0)}
+              className="rounded-sm px-2 py-1 text-xs font-medium transition-colors bg-slate-800 text-slate-300 hover:bg-slate-700">
+              Auto
+            </button>
+            <button
+              onClick={() => api.setMode(selectedId, 1)}
+              className="rounded-sm px-2 py-1 text-xs font-medium transition-colors bg-emerald-500/20 text-emerald-300 hover:bg-emerald-400">
+              Vert
+            </button>
+            <button
+              onClick={() => api.setMode(selectedId, 2)}
+              className="rounded-sm px-2 py-1 text-xs font-medium transition-colors bg-red-500/20 text-red-300 hover:bg-red-400">
+              Rouge
+            </button>
+            <button
+              onClick={() => api.setMode(selectedId, 3)}
+              className="rounded-sm px-2 py-1 text-xs font-medium transition-colors bg-amber-500/20 text-amber-300 hover:bg-amber-400">
+              Maintenance
+            </button>
+          </div>
+          {/* Bouton demande piéton (auto seulement) */}
+          {selectedId && modeActif === 0 && (
+            <button
+              onClick={() => api.requestPedestrianCrossing(selectedId)}
+              className="rounded-sm px-3 py-1 text-xs font-medium transition-colors bg-slate-800 text-slate-300 hover:bg-slate-700 mt-1">
+              Demander piéton
+            </button>
           )}
           <button
             onClick={refresh}

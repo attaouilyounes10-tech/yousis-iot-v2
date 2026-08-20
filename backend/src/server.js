@@ -11,8 +11,9 @@ const express = require('express');
 const cors = require('cors');
 const { Server } = require('socket.io');
 
-// Initialise la base (crée le fichier + le schéma)
+// Initialise la base + compte utilisateur (seed auto)
 require('./db');
+require('./seed');
 
 // Origines autorisées pour l'API device (appelée par le simulateur / ESP32
 // depuis une autre machine). Le frontend lui-même est servi en same-origin par

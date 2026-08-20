@@ -1,14 +1,18 @@
 // ============================================================
-// YOUXIS IOT — Page « Feu » (visionnage seul, supervision temps réel)
-// Affiche l'état du feu tricolore, distance, compteur piétons, journal.
-// Aucune commande ici (elles sont dans « Tableau de bord »).
+// YOUXIS IOT — Page « Feu » (visionnage seul, façon Wokwi/simulation)
+// ------------------------------------------------------------
+// Affiche en temps réel l'état du feu tricolore et de la distance, sans
+// aucune commande. Les commandes vivent dans « Tableau de bord ».
+//   - feu      0 = vert | 1 = orange | 2 = rouge | 3 = maintenance
+//   - distance (cm), pedestrian (0/1), compteur_pietons
+// La logique est côté DEVICE (simulateur Python ou vrai ESP32).
 // ============================================================
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useLiveData } from '../hooks/useLiveData.jsx';
 import { fmtTime, fmtValue } from '../lib/format.js';
 import {
-  SEUIL_DEFAUT, FEU_INFO, Lamp, toneCls, btn, copierSansBug,
+  SEUIL_DEFAUT, FEU_INFO, Lamp, toneCls, copierSansBug, btn,
 } from '../lib/feu.jsx';
 import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -22,11 +26,11 @@ export default function Feu() {
   const [events, setEvents] = useState([]);
   const [distHistory, setDistHistory] = useState([]);
   const prev = useRef({});
+  const prevMode = useRef(undefined);
 
-  // ---- Chargement : devices + datastreams (clé → id) ----
+  // ---- Chargement : devices + leurs datastreams (pour mapper clé → id) ----
   async function load() {
     try {
-      setError('');
       const list = await api.getDevices();
       const details = await Promise.all(list.map((d) => api.getDevice(d.id).catch(() => null)));
       const enriched = list.map((d, i) => {
@@ -43,7 +47,7 @@ export default function Feu() {
       else if (feuOnes.length) setSelectedId(String(feuOnes[0].id));
       else setSelectedId('');
     } catch (e) {
-      setError(e?.message || 'Impossible de charger les devices');
+      setError(e.message);
     }
   }
 
@@ -51,7 +55,8 @@ export default function Feu() {
 
   const device = devices.find((d) => String(d.id) === selectedId) || null;
   const byKey = device?.byKey || {};
-  const online = device && deviceStatus ? (selectedId in deviceStatus ? deviceStatus[selectedId] : device.online) : null;
+  const online =
+    device && deviceStatus ? (selectedId in deviceStatus ? deviceStatus[selectedId] : device.online) : null;
 
   // ---- Valeurs en direct (WebSocket) ----
   const dist = liveData?.[byKey.distance];
@@ -65,7 +70,7 @@ export default function Feu() {
 
   // ---- Historique distance au changement de device ----
   useEffect(() => {
-    if (!device?.token || !byKey.distance) return;
+    if (!device?.token) return undefined;
     let annule = false;
     api.getLatest(device.token)
       .then((l) => {
@@ -77,6 +82,7 @@ export default function Feu() {
       })
       .catch(() => {});
     return () => { annule = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [device?.id, byKey.distance]);
 
   // ---- Graphique distance : on ajoute chaque point reçu en direct ----
@@ -84,6 +90,7 @@ export default function Feu() {
     const d = liveData?.[byKey.distance];
     if (!device || !d) return;
     setDistHistory((h) => [...h, { createdAt: d.createdAt, value: d.value }].slice(-60));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveData?.[byKey.distance]?.value, byKey.distance, device?.id]);
 
   // ---- Journal : changement d'état du feu ----
@@ -102,7 +109,19 @@ export default function Feu() {
       else addEvent('✓ Passage libre — aucun piéton', 'ok');
     }
     prev.current = { f: feuVal, p: pedVal, d: distVal };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feuVal, pedVal, distVal]);
+
+  // ---- Journal : changement de mode système ----
+  useEffect(() => {
+    const m = liveData?.[byKey.mode]?.value;
+    if (m !== undefined && prevMode.current !== undefined && m !== prevMode.current) {
+      const lbl = { 0: 'Auto', 1: 'Vert forcé', 2: 'Rouge forcé', 3: 'Maintenance' }[m] || String(m);
+      addEvent(`🕹️ Mode : ${lbl}`, m === 3 ? 'maint' : m === 2 ? 'rouge' : m === 1 ? 'vert' : 'ok');
+    }
+    prevMode.current = m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveData?.[byKey.mode]?.value, byKey.mode]);
 
   const info = feuVal !== undefined ? FEU_INFO[feuVal] : null;
   const carLamp = info ? info.lamp : null;
@@ -113,24 +132,7 @@ export default function Feu() {
 
   const tileCard = 'rounded-3xl border border-slate-800 bg-slate-900/70 p-6';
   const tileTitle = 'flex items-center gap-2 font-semibold';
-
-  // ---- Rendu ----
-  if (error) {
-    return (
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-bold">🚦 Feu intelligent</h2>
-        </div>
-        <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-center">
-          <p className="text-red-300 font-semibold">⚠️ Erreur de chargement</p>
-          <p className="mt-2 text-sm text-slate-300">{error}</p>
-          <button onClick={load} className="mt-4 rounded-xl bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700">
-            Réessayer
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const miniLabel = 'text-[11px] uppercase tracking-wider text-slate-500';
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -142,7 +144,49 @@ export default function Feu() {
             {online ? '● en ligne' : '○ hors ligne'}
           </span>
         )}
+        {/* Contrôle mode système */}
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-xs text-slate-400">Mode :</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => api.setMode(0)}
+              className="rounded-lg bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700">
+              Auto
+            </button>
+            <button
+              onClick={() => api.setMode(1)}
+              className="rounded-lg bg-emerald-500/20 px-2 py-1 text-xs text-emerald-300 hover:bg-emerald-400">
+              Vert forc.
+            </button>
+            <button
+              onClick={() => api.setMode(2)}
+              className="rounded-lg bg-red-500/20 px-2 py-1 text-xs text-red-300 hover:bg-red-400">
+              Rouge forc.
+            </button>
+            <button
+              onClick={() => api.setMode(3)}
+              className="rounded-lg bg-amber-500/20 px-2 py-1 text-xs text-amber-300 hover:bg-amber-400">
+              Maintenance
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Bouton demande piéton (disponible que en mode Auto) */}
+      <div className="mt-2">
+        {modeActif === 0 && (
+          <button
+            onClick={() => api.requestPedestrianCrossing()}
+            className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 w-full">
+            Demander passage piéton
+          </button>
+        )}
+        {modeActif !== 0 && (
+          <p className="text-xs text-slate-500 mt-1">Impossible : un mode actif est sélectionné</p>
+        )}
+      </div>
+
+      {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
 
       {!device && (
         <div className="rounded-3xl border border-dashed border-slate-700 p-10 text-center">
@@ -156,7 +200,7 @@ export default function Feu() {
 
       {device && !device.hasFeu && (
         <div className="rounded-3xl border border-dashed border-slate-700 p-10 text-center">
-          <p className="font-semibold">Le device « {device.name} » n'a pas encore les datastreams du feu.</p>
+          <p className="font-semibold">Le device « {device.name} » n’a pas encore les datastreams du feu.</p>
         </div>
       )}
 
@@ -259,7 +303,7 @@ export default function Feu() {
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
-                  <p className="text-sm text-slate-500">En attente de l'historique… (le simulateur doit tourner)</p>
+                  <p className="text-sm text-slate-500">En attente de l’historique… (le simulateur doit tourner)</p>
                 )}
               </div>
               <p className="mt-2 text-[11px] text-slate-500">
@@ -284,7 +328,7 @@ export default function Feu() {
             </div>
 
             <div className={`${tileCard} lg:col-span-3`}>
-              <h3 className={tileTitle}>📋 État actuel & journal</h3>
+              <h3 className={tileTitle}>📋 État actuel &amp; journal</h3>
               <div className="mt-3 text-sm text-slate-400">
                 {info ? (
                   <span className={`text-lg font-semibold ${info.cls}`}>{info.label}</span>
@@ -295,7 +339,7 @@ export default function Feu() {
               <div className="mt-4">
                 <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
                   {events.length === 0 ? (
-                    <p className="text-sm text-slate-500">En attente d'événements…</p>
+                    <p className="text-sm text-slate-500">En attente d’événements…</p>
                   ) : (
                     events.map((ev, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm">

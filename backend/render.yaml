@@ -1,0 +1,25 @@
+# Render configuration for backend (alternative to Railway)
+services:
+  - type: web
+    name: yousis-iot-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: frankfurt
+    healthCheckPath: /api/auth/me
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /data/yousis.db
+      # À définir dans Render Dashboard > Environment :
+      # - JWT_SECRET
+      # - ALLOWED_ORIGINS=https://ton-frontend.vercel.app
+
+# Pour SQLite persistant sur Render :
+# 1. Dans le service > Disks > Add Disk
+# 2. Name: data, Mount Path: /data, Size: 1GB minimum
+# 3. Le fichier yousis.db sera persistant

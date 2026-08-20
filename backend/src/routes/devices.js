@@ -15,9 +15,9 @@ const datastreamsRouter = express.Router();
 devicesRouter.use(authRequired);
 datastreamsRouter.use(authRequired);
 
-// ================= Doit appartenir à l'utilisateur =================
+// ================= Tous les devices sont visibles (mode sans login) =================
 function getDeviceOr404(userId, deviceId) {
-  return db.prepare('SELECT * FROM devices WHERE id = ? AND user_id = ?').get(Number(deviceId), userId);
+  return db.prepare('SELECT * FROM devices WHERE id = ?').get(Number(deviceId));
 }
 
 function withStatus(device) {
@@ -26,7 +26,7 @@ function withStatus(device) {
 
 // ==== Liste des devices ====
 devicesRouter.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM devices WHERE user_id = ? ORDER BY id').all(req.user.id);
+  const rows = db.prepare('SELECT * FROM devices ORDER BY id').all();
   res.json(rows.map(withStatus));
 });
 
@@ -126,7 +126,33 @@ devicesRouter.post('/:id/datastreams', (req, res) => {
   }
 });
 
-// ==== Envoyer une commande vers un device (bouton/slider depuis le dashboard) ====
+// ==== Mode système du feu (0=Auto, 1=Vert forcé, 2=Rouge forcé, 3=Maintenance) ====
+devicesRouter.post('/:id/feu/mode', authRequired, (req, res) => {
+  const device = getDeviceOr404(req.user.id, req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device introuvable' });
+
+  const mode = Number(req.body?.mode);
+  if (Number.isNaN(mode) || mode < 0 || mode > 3) {
+    return res.status(400).json({ error: 'Mode invalide (doit être 0-3)' });
+  }
+
+  db.prepare('INSERT INTO feu_cycles (device_id, etat, pedestrian, created_at) VALUES (?, ?, ?, ?)')
+    .run(device.id, mode, 0, Date.now());
+
+  res.json({ ok: true, mode });
+});
+
+// ==== Demande passage piéton ====
+devicesRouter.post('/:id/feu/pedestrian', authRequired, (req, res) => {
+  const device = getDeviceOr404(req.user.id, req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device introuvable' });
+
+  db.prepare('INSERT INTO feu_cycles (device_id, etat, pedestrian, created_at) VALUES (?, ?, ?, ?)')
+    .run(device.id, 2, 1, Date.now()); // état rouge, pedestrian=1
+
+  res.json({ ok: true, pedestrian: true });
+});
+
 devicesRouter.post('/:id/commands', (req, res) => {
   const device = getDeviceOr404(req.user.id, req.params.id);
   if (!device) return res.status(404).json({ error: 'Device introuvable' });
@@ -154,11 +180,11 @@ devicesRouter.post('/:id/commands', (req, res) => {
 
 // ================= Routes datastreams =================
 
-// Récupère un datastream en vérifiant qu'il appartient à l'utilisateur
+// Récupère un datastream (sans login : tous les datastreams sont accessibles)
 function getDsOr404(userId, dsId) {
   return db
-    .prepare('SELECT ds.* FROM datastreams ds JOIN devices d ON d.id = ds.device_id WHERE ds.id = ? AND d.user_id = ?')
-    .get(Number(dsId), userId);
+    .prepare('SELECT ds.* FROM datastreams ds JOIN devices d ON d.id = ds.device_id WHERE ds.id = ?')
+    .get(Number(dsId));
 }
 
 // ==== Régler les seuils d'alerte ====

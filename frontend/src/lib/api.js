@@ -1,11 +1,12 @@
 // ============================================================
 // YOUXIS IOT — Client API (fetch vers /api)
-// Envoie le JWT en-tête Authorization: Bearer <token>.
+// Envoie le JWT en-tête Authorization: Bearer <token>,
+// ou aucun header quand token = null (mode « tout le monde accueilli »).
 // ============================================================
 let token = null;
 
 // Callback appelé en cas de 401 (compte disparu / token invalide) :
-// permet au contexte d'auth de déconnecter proprement l'utilisateur.
+// permet au contexte d'auth de basculer en mode public.
 let onUnauthorized = null;
 export function setOnUnauthorized(cb) {
   onUnauthorized = cb;
@@ -72,4 +73,8 @@ export const api = {
   createWidget: (body) => req('POST', '/widgets', body),
   updateWidget: (id, body) => req('PATCH', `/widgets/${id}`, body),
   deleteWidget: (id) => req('DELETE', `/widgets/${id}`),
+
+  // Commandes du feu
+  setMode: (deviceId, mode) => req('POST', `/devices/${deviceId}/feu/mode`, { mode }),
+  requestPedestrianCrossing: (deviceId) => req('POST', `/devices/${deviceId}/feu/pedestrian`),
 };

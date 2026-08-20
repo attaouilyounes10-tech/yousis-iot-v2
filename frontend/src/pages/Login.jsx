@@ -1,71 +1,67 @@
 // ============================================================
-// YOUXIS IOT — Page de connexion
+// YOUXIS IOT — Page de connexion (mode sécurisé)
+// Affiche un formulaire email+mdp. Envoi vers /api/auth/login.
+// Si succès, redirige vers l'accueil (/).
 // ============================================================
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth.jsx';
 
 export default function Login() {
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  // Pré-remplit avec le dernier email utilisé (inscription ou connexion précédente)
-  const [email, setEmail] = useState(() => localStorage.getItem('yousis_last_email') || '');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
-  async function submit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setBusy(true);
     try {
       await login(email, password);
-      localStorage.setItem('yousis_last_email', email.trim());
-      navigate('/');
+      navigate('/', { replace: true });
     } catch (err) {
-      setError(err?.message || 'Échec de la connexion');
-    } finally {
-      setBusy(false);
+      setError(err.message || 'Erreur de connexion');
     }
-  }
+  };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-8">
-        <div className="mb-6 flex items-center gap-2">
-          <span className="h-3 w-3 rounded-full bg-cyan-400 shadow-[0_0_12px_#22d3ee]" />
-          <h1 className="text-2xl font-bold">
-            YOUXIS <span className="text-cyan-400">IOT</span>
-          </h1>
-        </div>
-        <h2 className="mb-4 text-lg font-semibold">Connexion</h2>
-        <form onSubmit={submit} className="space-y-3" autoComplete="on">
-          <input
-            type="email" required placeholder="Email" value={email}
-            name="email" autoComplete="username" autoFocus
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-          />
-          <input
-            type="password" required placeholder="Mot de passe" value={password}
-            name="password" autoComplete="current-password"
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-          />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 flex items-center justify-center">
+      <div className="bg-slate-800 rounded-xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
+        <h2 className="text-2xl font-bold text-center mb-6">🔑 Connexion</h2>
+        {error && <p className="text-red-400 text-sm mb-4 center-text">{error}</p>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Email</label>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              required
+              className="w-full px-3 py-2 rounded border border-slate-600 bg-slate-900 text-slate-100"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Mot de passe</label>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              required
+              className="w-full px-3 py-2 rounded border border-slate-600 bg-slate-900 text-slate-100"
+            />
+          </div>
           <button
-            type="submit" disabled={busy}
-            className="w-full rounded-lg bg-cyan-500 py-2 font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50"
+            type="submit"
+            className="w-full py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 transition-colors"
           >
-            {busy ? '…' : 'Se connecter'}
+            Se connecter
           </button>
+          <p className="text-center text-sm mt-4 text-slate-500">
+            Vous n'avez pas de compte ?
+            <a href="/register" className="underline text-cyan-300 font-medium">S'inscrire</a>
+          </p>
         </form>
-        <p className="mt-4 text-center text-sm text-slate-400">
-          Pas de compte ?{' '}
-          <Link to="/register" className="text-cyan-400 hover:underline">
-            S'inscrire
-          </Link>
-        </p>
       </div>
     </div>
   );
