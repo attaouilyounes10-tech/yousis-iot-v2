@@ -24,8 +24,10 @@ function signToken(userId) {
   return jwt.sign({ sub: userId }, SECRET, { expiresIn: '7d' });
 }
 
-// Middleware Express : en mode sécurisé, un token JWT valide utilise son
-// utilisateur, sinon on renvoie 401 (login requis).
+// Middleware Express : en « site ouvert », un token JWT valide utilise son
+// utilisateur ; sinon (token absent ou invalide) on bascule sur l'utilisateur
+// public (PUBLIC_USER_ID) au lieu de renvoyer 401. Ainsi un visiteur sans
+// compte peut visionner les devices / widgets / cycles en temps réel.
 function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -41,12 +43,15 @@ function authRequired(req, res, next) {
         return next();
       }
     } catch (_) {
-      /* token invalide -> on continue vers la 401 ci-dessous */
+      /* token invalide -> on bascule sur le public ci-dessous */
     }
   }
 
-  // Aucun token ou token invalide -> 401 avec message clair
-  res.status(401).json({ error: 'Authentification requise' });
+  // Aucun token ou token invalide -> mode public : le site reste consultable
+  // par tout le monde. Le marqueur public:true permet aux routes d'écriture
+  // de refuser proprement si besoin (ex. création de device réservée aux connectés).
+  req.user = { id: DEFAULT_USER_ID, public: true };
+  next();
 }
 
 // Vérifie un token pour socket.io : renvoie l'utilisateur (public par défaut si absent/invalide).

@@ -127,6 +127,9 @@ devicesRouter.post('/:id/datastreams', (req, res) => {
 });
 
 // ==== Mode système du feu (0=Auto, 1=Vert forcé, 2=Rouge forcé, 3=Maintenance) ====
+// On écrit une COMMANDE (device_commands) sur le datastream 'mode' : c'est ce
+// que lit le simulateur / ESP32 via GET /latest. On émet aussi 'command:update'
+// en temps réel pour que l'UI reflète le changement immédiatement.
 devicesRouter.post('/:id/feu/mode', authRequired, (req, res) => {
   const device = getDeviceOr404(req.user.id, req.params.id);
   if (!device) return res.status(404).json({ error: 'Device introuvable' });
@@ -136,19 +139,39 @@ devicesRouter.post('/:id/feu/mode', authRequired, (req, res) => {
     return res.status(400).json({ error: 'Mode invalide (doit être 0-3)' });
   }
 
-  db.prepare('INSERT INTO feu_cycles (device_id, etat, pedestrian, created_at) VALUES (?, ?, ?, ?)')
-    .run(device.id, mode, 0, Date.now());
+  const ds = db.prepare("SELECT * FROM datastreams WHERE device_id = ? AND key = 'mode'").get(device.id);
+  if (!ds) return res.status(400).json({ error: "Datastream 'mode' manquant (crée-le sur le device)" });
+
+  db.prepare('INSERT INTO device_commands (datastream_id, user_id, value, created_at) VALUES (?, ?, ?, ?)')
+    .run(ds.id, req.user.id, mode, Date.now());
+
+  emitToUser(req.app.locals.io, req.user.id, 'command:update', {
+    datastreamId: ds.id,
+    value: mode,
+    createdAt: Date.now(),
+  });
 
   res.json({ ok: true, mode });
 });
 
 // ==== Demande passage piéton ====
+// Bouton poussoir : on écrit une commande 'bouton_pieton' = 1 (front montant
+// détecté côté device). Le simulateur la lit via /latest et déclenche un passage.
 devicesRouter.post('/:id/feu/pedestrian', authRequired, (req, res) => {
   const device = getDeviceOr404(req.user.id, req.params.id);
   if (!device) return res.status(404).json({ error: 'Device introuvable' });
 
-  db.prepare('INSERT INTO feu_cycles (device_id, etat, pedestrian, created_at) VALUES (?, ?, ?, ?)')
-    .run(device.id, 2, 1, Date.now()); // état rouge, pedestrian=1
+  const ds = db.prepare("SELECT * FROM datastreams WHERE device_id = ? AND key = 'bouton_pieton'").get(device.id);
+  if (!ds) return res.status(400).json({ error: "Datastream 'bouton_pieton' manquant (crée-le sur le device)" });
+
+  db.prepare('INSERT INTO device_commands (datastream_id, user_id, value, created_at) VALUES (?, ?, ?, ?)')
+    .run(ds.id, req.user.id, 1, Date.now());
+
+  emitToUser(req.app.locals.io, req.user.id, 'command:update', {
+    datastreamId: ds.id,
+    value: 1,
+    createdAt: Date.now(),
+  });
 
   res.json({ ok: true, pedestrian: true });
 });

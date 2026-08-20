@@ -149,22 +149,22 @@ export default function Feu() {
           <span className="text-xs text-slate-400">Mode :</span>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => api.setMode(0)}
+              onClick={() => selectedId && api.setMode(selectedId, 0)}
               className="rounded-lg bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700">
               Auto
             </button>
             <button
-              onClick={() => api.setMode(1)}
+              onClick={() => selectedId && api.setMode(selectedId, 1)}
               className="rounded-lg bg-emerald-500/20 px-2 py-1 text-xs text-emerald-300 hover:bg-emerald-400">
               Vert forc.
             </button>
             <button
-              onClick={() => api.setMode(2)}
+              onClick={() => selectedId && api.setMode(selectedId, 2)}
               className="rounded-lg bg-red-500/20 px-2 py-1 text-xs text-red-300 hover:bg-red-400">
               Rouge forc.
             </button>
             <button
-              onClick={() => api.setMode(3)}
+              onClick={() => selectedId && api.setMode(selectedId, 3)}
               className="rounded-lg bg-amber-500/20 px-2 py-1 text-xs text-amber-300 hover:bg-amber-400">
               Maintenance
             </button>
@@ -176,7 +176,7 @@ export default function Feu() {
       <div className="mt-2">
         {modeActif === 0 && (
           <button
-            onClick={() => api.requestPedestrianCrossing()}
+            onClick={() => selectedId && api.requestPedestrianCrossing(selectedId)}
             className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 w-full">
             Demander passage piéton
           </button>
@@ -193,7 +193,7 @@ export default function Feu() {
           <p className="mb-1 text-3xl">🚦</p>
           <p className="font-semibold">Aucun device « Feu intelligent » trouvé.</p>
           <p className="mt-1 text-sm text-slate-400">
-            Créez-le depuis l'onglet <span className="text-cyan-300">🎛️ Tableau de bord</span>.
+            Créez-le depuis l'onglet <span className="text-cyan-300">📱 Devices</span> (type « esp32 » puis ajoutez les datastreams du feu).
           </p>
         </div>
       )}
