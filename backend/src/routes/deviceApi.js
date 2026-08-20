@@ -107,7 +107,12 @@ router.get('/devices/:token/latest', (req, res) => {
   const datastreams = streams.map((s) => {
     const last = lastOf(s.id);
     // Pour une sortie (ex: led), la valeur à renvoyer est la dernière commande reçue
-    const cmd = db.prepare('SELECT value FROM device_commands WHERE datastream_id = ? ORDER BY id DESC LIMIT 1').get(s.id);
+    const cmd = db.prepare('SELECT id, value FROM device_commands WHERE datastream_id = ? ORDER BY id DESC LIMIT 1').get(s.id);
+    if (cmd && s.key === 'bouton_pieton') {
+      // Le bouton piéton est une impulsion : on la consomme après lecture
+      // (acquittement), sinon le device la re-déclencherait sans cesse.
+      db.prepare('DELETE FROM device_commands WHERE datastream_id = ? AND id <= ?').run(s.id, cmd.id);
+    }
     return {
       key: s.key,
       unit: s.unit,

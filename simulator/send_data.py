@@ -14,8 +14,8 @@ Deux modes, détectés automatiquement au démarrage :
   * mode "capteurs" (défaut) : valeurs aléatoires 0-100 pour chaque datastream.
   * mode "feu" : si le device possède les datastreams "distance" ET "feu".
     On simule un piéton qui s'approche du capteur HC-SR04 : la distance chute
-    sous le seuil, le feu passe alors VERT -> ORANGE (2 s) -> ROUGE (6 s)
-    -> VERT pendant que le piéton traverse. Le device envoie :
+    sous le seuil, le feu passe alors VERT -> ORANGE (3 s) -> ROUGE le temps
+    de la traversée du piéton -> VERT. Le device envoie :
       - distance   (cm)
       - pedestrian (0 = personne, 1 = piéton détecté)
       - feu        (0 = vert, 1 = orange, 2 = rouge)  → feu des voitures
@@ -52,7 +52,7 @@ except Exception:
     pass
 
 DEFAULT_BASE = "http://localhost:3001"
-SEUIL_DEFAULT = 80  # cm
+SEUIL_DEFAULT = 200  # cm : un HC-SR04 voit un piéton approcher à ~2 m (réaliste)
 
 # États du feu (lampes des voitures)
 FEU_VERT, FEU_ORANGE, FEU_ROUGE, FEU_MAINT = 0, 1, 2, 3
@@ -90,15 +90,15 @@ class FeuScenario:
     C'est exactement ce que ferait un vrai ESP32 branché au HC-SR04 :
     on mesure la distance, on détecte le piéton (distance < seuil) et on
     pilote le feu avec une petite machine à états :
-        VERT --piéton--> ORANGE (3 s) --→ ROUGE (10 s) --→ VERT
+        VERT --piéton--> ORANGE (3 s) --→ ROUGE (le temps de traversée) --→ VERT
     """
 
-    DUREE_ORANGE = 3.0    # s : les voitures s'apprêtent à s'arrêter
-    DUREE_ROUGE = 10.0    # s : le piéton traverse (durée lisible pour la démo)
-    DUREE_PIETON = 4.0    # s : temps de traversée du piéton (feu rouge pour voitures)
-    ROUTE_DEGAGEE = (140.0, 400.0)  # cm : route libre (pas de piéton)
+    DUREE_ORANGE = 3.0    # s : ambre — les voitures s'apprêtent à s'arrêter (standard FR)
+    ROUGE_MIN = 5.0       # s : rouge minimal = temps de traversée de sécurité (bouton)
+    ROUGE_MAX = 30.0      # s : rouge maximal (sécurité si présence piéton anormale)
+    ROUTE_DEGAGEE = (220.0, 400.0)  # cm : route libre (au-dessus du seuil → pas de piéton)
     PIETON_DIST = (20.0, 70.0)      # cm : piéton devant le capteur
-    PIETON_DUREE = (12.0, 18.0)    # s : présence du piéton (reste détecté le temps de traverser)
+    PIETON_DUREE = (4.0, 8.0)       # s : temps de traversée REALISTE du piéton
     PROCHAIN_PIETON = (45.0, 75.0)  # s de vert calme avant le piéton suivant (cycles bien espacés)
 
     def __init__(self, seuil=SEUIL_DEFAULT, compteur_init=0):
@@ -111,7 +111,9 @@ class FeuScenario:
         self._feu = FEU_VERT
         self._phase_until = 0.0    # fin de la phase ORANGE / ROUGE
         self._cycle_start = self._now()   # début du vert en cours
-        self._pending = False      # un passage a été demandé (piéton ou bouton)
+        self._traverse_min = 0.0   # fin de la traversée en cours (rouge)
+        self._rouge_max_abs = 0.0  # borne absolue (monotonic) du rouge = entrée + ROUGE_MAX
+        self._traverse_en_cours = False  # une traversée est engagée (mémorisée)
         self._appui = False        # impulsion du bouton « Piéton » en attente
         self._bouton_prec = 0      # valeur précédente du bouton (détection de front)
         self._compteur = int(compteur_init)  # repris depuis le backend (sinon 0)
@@ -134,8 +136,10 @@ class FeuScenario:
                 self._cycle_start = self._now()
             self.mode = mode
         if bouton_pieton is not None:
-            # Front montant (0 -> 1) = une demande de passage à la demande
-            if bouton_pieton == 1 and self._bouton_prec != 1:
+            # Un bouton « Piéton » à 1 = demande de passage active. Tant que la
+            # plateforme le maintient à 1, le passage reste demandé (plus
+            # robuste qu'un front unique pour un simulateur).
+            if bouton_pieton == 1:
                 self._appui = True
             self._bouton_prec = bouton_pieton
 
@@ -155,44 +159,67 @@ class FeuScenario:
         return max(5.0, self._distance)
 
     def _mettre_a_jour_feu(self, demande):
-        """Machine à états : durée minimale de vert, mode auto/forcé, bouton piéton.
+        """Machine à états d'un feu tricolore REALISTE.
 
-        Le bouton piéton (ou un piéton auto détecté) agit IMMÉDIATEMENT quand le
-        feu est vert : il interrompt le vert sans attendre la durée minimale, pour
-        que l'action de l'utilisateur soit visible tout de suite. Le vert minimal
-        ne s'applique qu'au déclenchement automatique (le feu ne passe pas orange
-        tout seul trop tôt).
+        VERT      — les voitures passent. Le feu reste au VERT tant qu'aucun
+                    piéton n'est detected (comme un vrai feu de carrefour) ;
+                    un piéton détecté (ou le bouton) déclenche ORANGE aussitôt.
+        ORANGE    — 3 s (ambre) : les voitures s'arrêtent, durée fixe standard.
+        ROUGE     — une traversée a été ENGAGÉE dès la détection (pendant le VERT
+                    ou l'ORANGE) et mémorisée : le rouge dure alors le TEMPS DE
+                    TRAVERSÉE RÉEL du piéton (borné ROUGE_MIN..ROUGE_MAX), sans
+                    se fier en continu à la distance (qui fluctue). Tant qu'un
+                    piéton est encore présent, la fin est repoussée.
 
-        Mode 3 = MAINTENANCE : le feu se fige en état 3 (clignote orange côté
-        interface), la circulation est coupée, aucun passage n'est compté.
+        Mode 1 = VERT forcé (le piéton attend) ; Mode 2 = ROUGE forcé ;
+        Mode 3 = MAINTENANCE : feu figé en état 3, circulation coupée.
         """
         now = self._now()
         if self.mode == 3:  # MAINTENANCE : feu clignotant (état 3)
             self._feu = FEU_MAINT
-            self._pending = False
         elif self.mode == 1:  # VERT forcé : le piéton attend
             self._feu = FEU_VERT
             self._cycle_start = now
-            self._pending = False
         elif self.mode == 2:  # ROUGE forcé : le piéton traverse
             self._feu = FEU_ROUGE
             self._cycle_start = now
-            self._pending = False
         elif self._feu == FEU_VERT:
-            if demande:
-                # Demande (piéton détecté OU bouton) : on passe au orange immédiatement.
-                # Sans demande, le feu RESTE VERT (comportement d'un vrai feu) :
-                # il ne doit jamais cycler tout seul en boucle.
+            # Vert pendant au moins `duree_vert` (commandée depuis le tableau de
+            # bord) : on ne coupe pas le vert trop tôt pour laisser passer les
+            # voitures. Passé ce délai, un piéton détecté (ou le bouton)
+            # déclenche l'orange immédiatement.
+            if demande and (now - self._cycle_start) >= self.duree_vert:
+                # Piéton détecté OU bouton : on ENGAGE la traversée et on passe
+                # à l'orange immédiatement (mémorisé pour toute la phase rouge).
+                self._traverse_en_cours = True
                 self._feu = FEU_ORANGE
                 self._phase_until = now + self.DUREE_ORANGE
-                self._pending = False
         elif self._feu == FEU_ORANGE and now >= self._phase_until:
+            # Entrée en rouge : la traversée est déjà engagée, on fixe sa durée.
+            # `traverse_min` = temps de traversée réaliste borné par ROUGE_MIN ;
+            # `rouge_max_abs` = borne absolue = entrée + ROUGE_MAX (sécurité si
+            # présence piéton anormale). ROUGE_MAX est une DURÉE, pas un instant.
             self._feu = FEU_ROUGE
-            self._phase_until = now + self.DUREE_ROUGE
-        elif self._feu == FEU_ROUGE and now >= self._phase_until:
-            self._feu = FEU_VERT
-            self._cycle_start = now
-            self._pending = False
+            self._traverse_min = now + min(
+                max(self.PIETON_DUREE[1], self.ROUGE_MIN), self.ROUGE_MAX
+            )
+            self._rouge_max_abs = now + self.ROUGE_MAX
+        elif self._feu == FEU_ROUGE:
+            # Rouge mémorisé : sa durée a été fixée à l'entrée (temps de
+            # traversée borné). Tant qu'un piéton est encore présent, on repousse
+            # la fin. Sinon on attend `traverse_min` (ou la borne absolue
+            # `rouge_max_abs` en dernier recours). Le bouton à 1 n'a plus d'effet.
+            if not demande:
+                if now >= self._traverse_min:
+                    self._feu = FEU_VERT
+                    self._cycle_start = now
+                    self._traverse_en_cours = False
+            elif now >= self._rouge_max_abs:
+                # Sécurité : on ne garde jamais le rouge indéfiniment même si un
+                # piéton « fantôme » reste détecté (capteur bruyant).
+                self._feu = FEU_VERT
+                self._cycle_start = now
+                self._traverse_en_cours = False
         return self._feu
 
     def etat(self):
@@ -210,6 +237,10 @@ class FeuScenario:
         # Comptabilise un passage sur le front montant du piéton (comme le sketch ESP32)
         if pedestrian == 1 and self._ped_prec == 0:
             self._compteur += 1
+            # Dès qu'un piéton est détecté, on ENGAGE une demande de traversée
+            # (mémorisée), comme le contrôleur d'un vrai feu qui « retient »
+            # qu'un usager attend — même si la distance fluctue ensuite.
+            self._traverse_en_cours = True
         self._ped_prec = pedestrian
         appui = self._appui
         self._appui = False
@@ -276,7 +307,7 @@ def main():
         compteur_init = lire_compteur(args.base, args.token)
         scenario = FeuScenario(seuil=args.seuil, compteur_init=compteur_init)
         print(f"Mode FEU INTELLIGENT — seuil de détection : {scenario.seuil:g} cm · compteur repris à {scenario._compteur}")
-        print("Le feu passe VERT → ORANGE (3 s) → ROUGE (10 s) quand un piéton s'approche.")
+        print("Le feu passe VERT → ORANGE (3 s) → ROUGE (le temps de traversée) → VERT.")
         print("Commandes lues chaque seconde depuis la plateforme : durée du vert, mode, bouton Piéton.")
     else:
         interval = args.interval if args.interval is not None else 3.0
