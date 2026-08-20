@@ -30,7 +30,7 @@ const MODES = [
 ];
 
 export default function Cycles() {
-  const { cycles, clearAll, resetSignal } = useLiveData() || {};
+  const { liveData, cycles, clearAll, resetSignal } = useLiveData() || {};
   const [devices, setDevices] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [history, setHistory] = useState([]); // cycles chargés depuis la base
@@ -167,6 +167,10 @@ export default function Cycles() {
   }, [segments]);
 
   const device = devices.find((d) => String(d.id) === selectedId) || null;
+
+  // Mode système actuel lu en temps réel (datastream 'mode' du device).
+  const modeDsId = device?.datastreams?.find((s) => s.key === 'mode')?.id;
+  const modeActif = modeDsId !== undefined ? liveData?.[modeDsId]?.value : undefined;
 
   return (
     <div className="mx-auto max-w-6xl">
