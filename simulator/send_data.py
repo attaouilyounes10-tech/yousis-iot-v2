@@ -126,6 +126,12 @@ class FeuScenario:
         if duree_vert is not None and 1 <= duree_vert <= 60:
             self.duree_vert = duree_vert
         if mode in (0, 1, 2, 3):
+            # Sortie de MAINTENANCE (3 -> autre) : le feu doit repartir du VERT.
+            # Sinon _feu reste bloqué en état 3, que la machine à états AUTO ne
+            # gère pas → le feu resterait figé en MAINTENANCE pour toujours.
+            if self.mode == 3 and mode != 3:
+                self._feu = FEU_VERT
+                self._cycle_start = self._now()
             self.mode = mode
         if bouton_pieton is not None:
             # Front montant (0 -> 1) = une demande de passage à la demande
