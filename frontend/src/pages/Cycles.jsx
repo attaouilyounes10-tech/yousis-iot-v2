@@ -21,14 +21,6 @@ const ETAT = {
 
 const tile = 'rounded-3xl border border-slate-800 bg-slate-900/70 p-6';
 
-// États du mode système
-const MODES = [
-  { v: 0, label: 'Auto',        cls: 'bg-cyan-500 text-slate-950' },
-  { v: 1, label: 'Vert forcé',  cls: 'bg-emerald-500 text-slate-950' },
-  { v: 2, label: 'Rouge forcé', cls: 'bg-red-500 text-slate-950' },
-  { v: 3, label: 'Maintenance', cls: 'bg-amber-500 text-slate-950' },
-];
-
 export default function Cycles() {
   const { liveData, cycles, clearAll, resetSignal } = useLiveData() || {};
   const [devices, setDevices] = useState([]);
@@ -168,10 +160,6 @@ export default function Cycles() {
 
   const device = devices.find((d) => String(d.id) === selectedId) || null;
 
-  // Mode système actuel lu en temps réel (datastream 'mode' du device).
-  const modeDsId = device?.datastreams?.find((s) => s.key === 'mode')?.id;
-  const modeActif = modeDsId !== undefined ? liveData?.[modeDsId]?.value : undefined;
-
   return (
     <div className="mx-auto max-w-6xl">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -179,38 +167,6 @@ export default function Cycles() {
         <div className="flex flex-wrap items-center gap-2">
           {device && (
             <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">{device.name}</span>
-          )}
-          {/* Sélecteur de mode système */}
-          <div className="ml-3 flex items-center gap-1">
-            <span className="text-xs text-slate-400">Mode :</span>
-            <button
-              onClick={() => api.setMode(selectedId, 0)}
-              className="rounded-sm px-2 py-1 text-xs font-medium transition-colors bg-slate-800 text-slate-300 hover:bg-slate-700">
-              Auto
-            </button>
-            <button
-              onClick={() => api.setMode(selectedId, 1)}
-              className="rounded-sm px-2 py-1 text-xs font-medium transition-colors bg-emerald-500/20 text-emerald-300 hover:bg-emerald-400">
-              Vert
-            </button>
-            <button
-              onClick={() => api.setMode(selectedId, 2)}
-              className="rounded-sm px-2 py-1 text-xs font-medium transition-colors bg-red-500/20 text-red-300 hover:bg-red-400">
-              Rouge
-            </button>
-            <button
-              onClick={() => api.setMode(selectedId, 3)}
-              className="rounded-sm px-2 py-1 text-xs font-medium transition-colors bg-amber-500/20 text-amber-300 hover:bg-amber-400">
-              Maintenance
-            </button>
-          </div>
-          {/* Bouton demande piéton (auto seulement) */}
-          {selectedId && modeActif === 0 && (
-            <button
-              onClick={() => api.requestPedestrianCrossing(selectedId)}
-              className="rounded-sm px-3 py-1 text-xs font-medium transition-colors bg-slate-800 text-slate-300 hover:bg-slate-700 mt-1">
-              Demander piéton
-            </button>
           )}
           <button
             onClick={refresh}
