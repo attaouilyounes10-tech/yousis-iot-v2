@@ -99,7 +99,7 @@ class FeuScenario:
     ROUTE_DEGAGEE = (220.0, 400.0)  # cm : route libre (au-dessus du seuil → pas de piéton)
     PIETON_DIST = (20.0, 70.0)      # cm : piéton devant le capteur
     PIETON_DUREE = (4.0, 8.0)       # s : temps de traversée REALISTE du piéton
-    PROCHAIN_PIETON = (45.0, 75.0)  # s de vert calme avant le piéton suivant (cycles bien espacés)
+    PROCHAIN_PIETON = (12.0, 20.0)  # s de vert calme avant le piéton suivant (vert le plus long, mais réactif)
 
     def __init__(self, seuil=SEUIL_DEFAULT, compteur_init=0):
         self.seuil = seuil
