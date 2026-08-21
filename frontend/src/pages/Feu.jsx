@@ -294,9 +294,9 @@ export default function Feu() {
               </div>
             </div>
 
-            <div className="grid gap-5 lg:grid-cols-2">
-              {/* Journal d'état */}
-              <div className={tileCard}>
+            <div className="grid gap-5 lg:grid-cols-3">
+              {/* Journal d'état — occupe 2 colonnes pour être spacieux et lisible */}
+              <div className={`${tileCard} lg:col-span-2`}>
                 <h3 className={tileTitle}>📋 État actuel &amp; journal</h3>
                 <div className="mt-3 text-sm text-slate-400">
                   {info ? (
@@ -305,14 +305,20 @@ export default function Feu() {
                     <span className="text-slate-500">En attente de données du capteur…</span>
                   )}
                 </div>
-                <div className="mt-4">
-                  <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                <div className="mt-5">
+                  <ul className="max-h-72 space-y-2 overflow-y-auto pr-2">
                     {events.length === 0 ? (
                       <p className="text-sm text-slate-500">En attente d’événements…</p>
                     ) : (
                       events.map((ev, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm">
-                          <span className="shrink-0 text-[11px] text-slate-500">{ev.time}</span>
+                        <li key={i} className="flex items-start gap-3 rounded-lg bg-slate-950/40 px-3 py-2 text-sm">
+                          <span className="shrink-0 font-mono text-[11px] text-slate-500">{ev.time}</span>
+                          <span className={`mt-px h-2 w-2 shrink-0 translate-y-1.5 rounded-full ${
+                            (toneCls[ev.tone] || 'text-emerald-300').includes('red') ? 'bg-red-400'
+                            : (toneCls[ev.tone] || '').includes('amber') ? 'bg-amber-400'
+                            : (toneCls[ev.tone] || '').includes('cyan') ? 'bg-cyan-400'
+                            : 'bg-emerald-400'
+                          }`} />
                           <span className={toneCls[ev.tone] || 'text-emerald-300'}>{ev.msg}</span>
                         </li>
                       ))
@@ -321,12 +327,12 @@ export default function Feu() {
                 </div>
               </div>
 
-              {/* Panneau de commandes */}
+              {/* Panneau de commandes — 1 colonne, compact mais bien rempli */}
               <div className={tileCard}>
                 <h3 className={tileTitle}>🎛️ Commandes du feu</h3>
 
                 {/* Sélecteur de mode */}
-                <p className="mt-4 mb-2 text-[11px] uppercase tracking-wider text-slate-500">Mode du système</p>
+                <p className="mt-5 mb-2 text-[11px] uppercase tracking-wider text-slate-500">Mode du système</p>
                 <div className="grid grid-cols-2 gap-2">
                   {MODES.map((m) => {
                     const isActive = modeActif === m.v;
@@ -334,7 +340,7 @@ export default function Feu() {
                       <button
                         key={m.v}
                         onClick={() => selectedId && api.setMode(selectedId, m.v)}
-                        className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150 ${
+                        className={`rounded-xl px-3 py-3 text-sm font-semibold transition-all duration-150 ${
                           isActive ? m.active : m.idle
                         }`}
                       >
@@ -343,7 +349,7 @@ export default function Feu() {
                     );
                   })}
                 </div>
-                <p className="mt-2 text-[11px] text-slate-500">
+                <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
                   {modeActif === 0
                     ? 'Auto : le feu réagit seul aux piétons détectés.'
                     : modeActif === 1
@@ -354,19 +360,19 @@ export default function Feu() {
                 </p>
 
                 {/* Bouton piéton */}
-                <div className="mt-5 border-t border-slate-800 pt-4">
-                  <p className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Demande de passage</p>
+                <div className="mt-6 border-t border-slate-800 pt-5">
+                  <p className="mb-3 text-[11px] uppercase tracking-wider text-slate-500">Demande de passage</p>
                   {modeActif === 0 ? (
                     <button
                       onClick={() => selectedId && api.requestPedestrianCrossing(selectedId)}
-                      className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-cyan-500/20 transition-all duration-150 hover:from-cyan-500 hover:to-cyan-400 active:scale-[0.98]"
+                      className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-cyan-500/20 transition-all duration-150 hover:from-cyan-500 hover:to-cyan-400 active:scale-[0.98]"
                     >
                       <span className="text-lg">🚸</span> Demander passage piéton
                     </button>
                   ) : (
                     <button
                       disabled
-                      className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-500"
+                      className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 py-3.5 text-sm font-semibold text-slate-500"
                     >
                       <span className="text-lg opacity-60">🚸</span> Indisponible (mode actif)
                     </button>
