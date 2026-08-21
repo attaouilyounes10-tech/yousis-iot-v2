@@ -29,7 +29,7 @@ export default function Layout() {
       }}
       className="px-3 py-2 rounded-xl text-sm font-medium transition-colors bg-red-600 text-white hover:bg-red-500"
     >
-      🚪 Déconnexion
+      Déconnexion
     </button>
   );
 

@@ -205,7 +205,7 @@ export default function Feu() {
           <div className="grid gap-5 lg:grid-cols-3">
             {/* Feux tricolores */}
             <div className={tileCard}>
-              <h3 className={tileTitle}>🚦 Feux</h3>
+              <h3 className={tileTitle}>🚦 Feu</h3>
               <div className="mt-4 flex items-start justify-center gap-6">
                 <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
                   <p className="mb-3 text-center text-[10px] font-semibold tracking-widest text-slate-500">VOITURES</p>
