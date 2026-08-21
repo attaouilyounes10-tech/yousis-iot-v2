@@ -4,7 +4,7 @@
 # ============================================================
 
 # ---- Stage 1: Build Frontend ----
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -20,7 +20,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: Backend + Static Server ----
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 

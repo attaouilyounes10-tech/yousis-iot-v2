@@ -5,6 +5,7 @@
 // ============================================================
 require('dotenv').config();
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const express = require('express');
@@ -35,7 +36,15 @@ app.use('/api/datastreams', require('./routes/devices').datastreamsRouter);
 app.use('/api/widgets', require('./routes/widgets'));
 
 // ===== En production : sert aussi le build frontend sur le même port =====
-const dist = path.join(__dirname, '..', '..', 'frontend', 'dist');
+// Le build peut se trouver à deux endroits selon la méthode de déploiement :
+//   - Nixpacks/Railway (build à la racine)   → <root>/frontend/dist
+//   - Docker multi-stage (copié dans public) → <backend>/public
+// On prend le premier dossier existant pour rester robuste.
+const distCandidates = [
+  path.join(__dirname, '..', '..', 'frontend', 'dist'), // Nixpacks / build local
+  path.join(__dirname, '..', 'public'),                 // Docker multi-stage
+];
+const dist = distCandidates.find((p) => fs.existsSync(p)) || distCandidates[0];
 app.use(express.static(dist));
 
 // Routage SPA : toute URL GET inconnue (non-API) → index.html du build.
