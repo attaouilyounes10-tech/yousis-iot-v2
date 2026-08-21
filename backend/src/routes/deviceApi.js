@@ -108,9 +108,10 @@ router.get('/devices/:token/latest', (req, res) => {
     const last = lastOf(s.id);
     // Pour une sortie (ex: led), la valeur à renvoyer est la dernière commande reçue
     const cmd = db.prepare('SELECT id, value FROM device_commands WHERE datastream_id = ? ORDER BY id DESC LIMIT 1').get(s.id);
-    if (cmd && s.key === 'bouton_pieton') {
-      // Le bouton piéton est une impulsion : on la consomme après lecture
-      // (acquittement), sinon le device la re-déclencherait sans cesse.
+    if (cmd && (s.key === 'bouton_pieton' || s.key === 'compteur_pietons')) {
+      // Impulsions « consommées » après lecture (acquittement) : le bouton
+      // piéton (1 = demande de passage) et la remise à zéro du compteur
+      // (-1 = RAZ) sinon le device les re-déclencherait sans cesse.
       db.prepare('DELETE FROM device_commands WHERE datastream_id = ? AND id <= ?').run(s.id, cmd.id);
     }
     return {

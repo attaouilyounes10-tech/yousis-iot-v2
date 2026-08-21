@@ -77,4 +77,5 @@ export const api = {
   // Commandes du feu
   setMode: (deviceId, mode) => req('POST', `/devices/${deviceId}/feu/mode`, { mode }),
   requestPedestrianCrossing: (deviceId) => req('POST', `/devices/${deviceId}/feu/pedestrian`),
+  resetCounter: (deviceId) => req('POST', `/devices/${deviceId}/feu/reset-counter`),
 };

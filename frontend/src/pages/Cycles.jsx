@@ -79,9 +79,13 @@ export default function Cycles() {
     try {
       // 1) Vide l'historique base de données pour ce device
       await api.clearCycles(selectedId);
-      // 2) Vide TOUT le reste (liveData = compteur/feu/distance remis à 0 partout)
+      // 2) Remet le COMPTEUR de passages à 0 DANS le simulateur (le compteur
+      //    vit côté device, vider la base ne suffit pas : il renverrait 852+).
+      //    On envoie une impulsion -1 que le device consomme et applique.
+      await api.resetCounter(selectedId);
+      // 3) Vide TOUT le reste (liveData = compteur/feu/distance remis à 0 partout)
       await clearAll?.();
-      // 3) Recharge l'historique base à zéro
+      // 4) Recharge l'historique base à zéro
       setHistory([]);
       setError('');
       setConfirmReset(false);

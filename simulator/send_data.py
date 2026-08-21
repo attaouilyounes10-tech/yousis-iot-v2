@@ -118,12 +118,13 @@ class FeuScenario:
         self._bouton_prec = 0      # valeur précédente du bouton (détection de front)
         self._compteur = int(compteur_init)  # repris depuis le backend (sinon 0)
         self._ped_prec = 0         # valeur précédente du piéton (détection de front)
+        self._raz_guard = False    # garde à un coup après un RAZ compteur (supprime 1 front)
 
     @staticmethod
     def _now():
         return time.monotonic()
 
-    def appliquer_commandes(self, duree_vert, mode, bouton_pieton):
+    def appliquer_commandes(self, duree_vert, mode, bouton_pieton, reset_compteur=False):
         """Applique les commandes lues sur /latest (tableau de bord)."""
         if duree_vert is not None and 1 <= duree_vert <= 60:
             self.duree_vert = duree_vert
@@ -142,6 +143,16 @@ class FeuScenario:
             if bouton_pieton == 1:
                 self._appui = True
             self._bouton_prec = bouton_pieton
+        if reset_compteur:
+            # Impulsion « Remise à zéro » du compteur de passages piétons,
+            # envoyée par la plateforme (« Remettre à 0 » de la page Cycles).
+            # Le compteur vit ici (pas en base), donc on le zéro en mémoire.
+            # On active un garde à un coup qui supprime le front montant
+            # immédiatement suivant le RAZ : ainsi le compteur retombe à 0 et
+            # seuls les NOUVEAUX passages (après une absence) sont recomptés.
+            self._compteur = 0
+            self._raz_guard = True
+            self._appui = False
 
     def _nouvelle_distance(self):
         """La distance évolue doucement vers sa cible (aller-retour d'un piéton)."""
@@ -236,11 +247,18 @@ class FeuScenario:
         pedestrian = 1 if distance < self.seuil else 0
         # Comptabilise un passage sur le front montant du piéton (comme le sketch ESP32)
         if pedestrian == 1 and self._ped_prec == 0:
-            self._compteur += 1
-            # Dès qu'un piéton est détecté, on ENGAGE une demande de traversée
-            # (mémorisée), comme le contrôleur d'un vrai feu qui « retient »
-            # qu'un usager attend — même si la distance fluctue ensuite.
-            self._traverse_en_cours = True
+            if self._raz_guard:
+                # On vient de remettre le compteur à 0 : on consomme ce premier
+                # front (le piéton déjà présent au RAZ) sans le compter, afin de
+                # retomber proprement sur 0 et de ne compter que les NOUVEAUX
+                # passages. Le garde est épuisé, les suivants seront comptés.
+                self._raz_guard = False
+            else:
+                self._compteur += 1
+                # Dès qu'un piéton est détecté, on ENGAGE une demande de traversée
+                # (mémorisée), comme le contrôleur d'un vrai feu qui « retient »
+                # qu'un usager attend — même si la distance fluctue ensuite.
+                self._traverse_en_cours = True
         self._ped_prec = pedestrian
         appui = self._appui
         self._appui = False
@@ -319,17 +337,19 @@ def main():
     try:
         while True:
             if feu_mode:
-                # Lit les commandes du tableau de bord (durée du vert, mode, bouton Piéton)
-                duree, mode, bouton = None, None, None
+                # Lit les commandes du tableau de bord (durée du vert, mode, bouton Piéton, RAZ compteur)
+                duree, mode, bouton, raz = None, None, None, False
                 try:
                     _, latest = request(args.base, "/api/devices/" + args.token + "/latest", token=args.token)
                     cmd = {s["key"]: s["value"] for s in latest.get("datastreams", [])}
                     duree = float(cmd["duree_vert"]) if cmd.get("duree_vert") is not None else None
                     mode = int(cmd["mode"]) if cmd.get("mode") is not None else None
                     bouton = int(cmd["bouton_pieton"]) if cmd.get("bouton_pieton") is not None else None
+                    # RAZ compteur : impulsion -1 sur 'compteur_pietons' (consommée côté plateforme)
+                    raz = cmd.get("compteur_pietons") == -1
                 except Exception:
                     pass  # backend indisponible ponctuellement -> valeurs courantes conservées
-                scenario.appliquer_commandes(duree, mode, bouton)
+                scenario.appliquer_commandes(duree, mode, bouton, reset_compteur=raz)
 
                 distance, pedestrian, feu, compteur = scenario.etat()
                 for key, value in (("distance", distance), ("pedestrian", pedestrian), ("feu", feu), ("compteur_pietons", compteur)):

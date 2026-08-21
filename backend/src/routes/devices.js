@@ -176,6 +176,30 @@ devicesRouter.post('/:id/feu/pedestrian', authRequired, (req, res) => {
   res.json({ ok: true, pedestrian: true });
 });
 
+// ==== Remise à zéro du compteur de passages piétons ====
+// Le compteur vit DANS le simulateur (self._compteur). Vider la base ne suffit
+// pas : la prochaine trame renverrait l'ancienne valeur +1. On écrit donc une
+// impulsion -1 sur le datastream 'compteur_pietons' que le device consomme
+// (acquittée dans /latest) pour remettre son compteur à 0.
+devicesRouter.post('/:id/feu/reset-counter', authRequired, (req, res) => {
+  const device = getDeviceOr404(req.user.id, req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device introuvable' });
+
+  const ds = db.prepare("SELECT * FROM datastreams WHERE device_id = ? AND key = 'compteur_pietons'").get(device.id);
+  if (!ds) return res.status(400).json({ error: "Datastream 'compteur_pietons' manquant (crée-le sur le device)" });
+
+  db.prepare('INSERT INTO device_commands (datastream_id, user_id, value, created_at) VALUES (?, ?, ?, ?)')
+    .run(ds.id, req.user.id, -1, Date.now());
+
+  emitToUser(req.app.locals.io, req.user.id, 'command:update', {
+    datastreamId: ds.id,
+    value: -1,
+    createdAt: Date.now(),
+  });
+
+  res.json({ ok: true, resetCounter: true });
+});
+
 devicesRouter.post('/:id/commands', (req, res) => {
   const device = getDeviceOr404(req.user.id, req.params.id);
   if (!device) return res.status(404).json({ error: 'Device introuvable' });
