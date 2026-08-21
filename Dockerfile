@@ -12,8 +12,11 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 
-# Copy arduino folder for ?raw import in Montage.jsx (vite.config.js fs.allow needs it)
-COPY arduino/ ./arduino/
+# Copy arduino folder for ?raw import in Montage.jsx. L'import est
+# « ../../../arduino/... » depuis src/pages/ → résout vers /app/arduino/
+# (3 niveaux au-dessus de /app/frontend). On copie donc à la racine /app,
+# pas dans /app/frontend, sans quoi l'import ?raw échoue au build.
+COPY arduino/ /app/arduino/
 
 # Copy source and build
 COPY frontend/ ./
