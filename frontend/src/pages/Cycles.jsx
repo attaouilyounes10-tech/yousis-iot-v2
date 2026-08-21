@@ -55,21 +55,6 @@ export default function Cycles() {
 
   useEffect(() => { load(); }, []);
 
-  // Rafraîchir : recharge l'historique persistant depuis la base
-  async function refresh() {
-    if (!selectedId) return;
-    setBusy(true);
-    try {
-      const rows = await api.getCycles(selectedId, 500);
-      setHistory(rows);
-      setError('');
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   // Remettre à 0 : vide TOUT (base + live) et remet le comptage à 0 partout sur le site.
   // Si selectedId est défini, on vide d'abord l'historique base pour ce device,
   // puis on appelle clearAll() qui vide liveData (compteur, feu, distance, alerts, cycles)
@@ -168,13 +153,6 @@ export default function Cycles() {
           {device && (
             <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">{device.name}</span>
           )}
-          <button
-            onClick={refresh}
-            disabled={busy || !selectedId}
-            className="rounded-xl bg-slate-800 px-3 py-1.5 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
-          >
-            ⟳ Rafraîchir
-          </button>
           {!confirmReset ? (
             <button
               onClick={() => setConfirmReset(true)}
