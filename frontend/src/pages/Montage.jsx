@@ -2,23 +2,16 @@
 // YOUXIS IOT — Page « Montage » (type Wokwi)
 // ------------------------------------------------------------
 // Affiche le code Arduino qui tourne sur l'ESP32 + le schéma de
-// câblage. Le .ino est importé en texte brut via l'import Vite « ?raw »
-// (aucune dépendance ajoutée, fonctionne en dev comme en prod).
+// câblage. Le .ino est servi depuis /public (fetch au runtime),
+// pas importé via « ?raw » : cela évite tout chemin relatif fragile
+// qui casse le build sur un hébergeur (Railway/Docker) où le dossier
+// arduino/ n'est pas au même endroit que sur la machine de dev.
 // ============================================================
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { btn, copierSansBug } from '../lib/feu.jsx';
 
 // Schéma de câblage (image du projet) importé via Vite (optimisée au build).
 import schemaImg from '../assets/schema-du-mini-projet.png';
-
-// Import du sketch Arduino en texte brut (Vite « ?raw »).
-// Import statique ESM (et NON require) : dans le navigateur/Vite, `require`
-// n'existe pas → un require() lèverait une ReferenceError attrapée par le
-// try/catch et on retomberait sur le placeholder « indisponible ».
-// Le dossier arduino/ (3 niveaux au-dessus) est autorisé via « fs.allow »
-// dans vite.config.js, donc l'import ?raw fonctionne en dev comme en prod.
-// eslint-disable-next-line import/no-unresolved
-import feuCode from '../../../arduino/esp32_youxis_feu.ino?raw';
 
 const BROCHES = [
   { pin: 25, nom: 'ROUGE', role: 'Feu voitures', couleur: '#ef4444' },
@@ -37,6 +30,18 @@ const tile = 'rounded-3xl border border-slate-800 bg-slate-900/70 p-6';
 export default function Montage() {
   const [copied, setCopied] = useState(false);
   const [showCode, setShowCode] = useState(true);
+  const [feuCode, setFeuCode] = useState('// Chargement du code Arduino…');
+
+  // Le sketch est servi depuis /public/arduino/ (fichier statique), donc il
+  // n'y a aucun import relatif à casser au build. Chargement au montage.
+  useEffect(() => {
+    let annule = false;
+    fetch('/arduino/esp32_youxis_feu.ino')
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))
+      .then((txt) => { if (!annule) setFeuCode(txt); })
+      .catch(() => { if (!annule) setFeuCode('// Code Arduino indisponible.'); });
+    return () => { annule = true; };
+  }, []);
 
   return (
     <div className="mx-auto max-w-6xl">
