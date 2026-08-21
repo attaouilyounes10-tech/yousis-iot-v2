@@ -130,6 +130,13 @@ export default function Feu() {
   const distPoints = distHistory.map((p) => ({ t: p.createdAt, v: p.value }));
   const NB_MAX = 60;
 
+  // Modes du feu (sélecteur regroupé dans le panneau « Commandes »)
+  const MODES = [
+    { v: 0, label: 'Auto',        active: 'bg-cyan-500 text-slate-950 shadow-[0_0_0_2px_rgba(6,182,212,0.4)]',         idle: 'bg-slate-800 text-slate-300 hover:bg-slate-700' },
+    { v: 1, label: 'Vert forcé',  active: 'bg-emerald-500 text-slate-950 shadow-[0_0_0_2px_rgba(16,185,129,0.4)]',     idle: 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-400/30' },
+    { v: 2, label: 'Rouge forcé', active: 'bg-red-500 text-slate-950 shadow-[0_0_0_2px_rgba(239,68,68,0.4)]',         idle: 'bg-red-500/15 text-red-300 hover:bg-red-400/30' },
+    { v: 3, label: 'Maintenance', active: 'bg-amber-500 text-slate-950 shadow-[0_0_0_2px_rgba(245,158,11,0.4)]',      idle: 'bg-amber-500/15 text-amber-300 hover:bg-amber-400/30' },
+  ];
   const tileCard = 'rounded-3xl border border-slate-800 bg-slate-900/70 p-6';
   const tileTitle = 'flex items-center gap-2 font-semibold';
   const miniLabel = 'text-[11px] uppercase tracking-wider text-slate-500';
@@ -143,46 +150,6 @@ export default function Feu() {
             (online ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500')}>
             {online ? '● en ligne' : '○ hors ligne'}
           </span>
-        )}
-        {/* Contrôle mode système */}
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-xs text-slate-400">Mode :</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => selectedId && api.setMode(selectedId, 0)}
-              className="rounded-lg bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700">
-              Auto
-            </button>
-            <button
-              onClick={() => selectedId && api.setMode(selectedId, 1)}
-              className="rounded-lg bg-emerald-500/20 px-2 py-1 text-xs text-emerald-300 hover:bg-emerald-400">
-              Vert forc.
-            </button>
-            <button
-              onClick={() => selectedId && api.setMode(selectedId, 2)}
-              className="rounded-lg bg-red-500/20 px-2 py-1 text-xs text-red-300 hover:bg-red-400">
-              Rouge forc.
-            </button>
-            <button
-              onClick={() => selectedId && api.setMode(selectedId, 3)}
-              className="rounded-lg bg-amber-500/20 px-2 py-1 text-xs text-amber-300 hover:bg-amber-400">
-              Maintenance
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Bouton demande piéton (disponible que en mode Auto) */}
-      <div className="mt-2">
-        {modeActif === 0 && (
-          <button
-            onClick={() => selectedId && api.requestPedestrianCrossing(selectedId)}
-            className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 w-full">
-            Demander passage piéton
-          </button>
-        )}
-        {modeActif !== 0 && (
-          <p className="text-xs text-slate-500 mt-1">Impossible : un mode actif est sélectionné</p>
         )}
       </div>
 
@@ -327,28 +294,84 @@ export default function Feu() {
               </div>
             </div>
 
-            <div className={`${tileCard} lg:col-span-3`}>
-              <h3 className={tileTitle}>📋 État actuel &amp; journal</h3>
-              <div className="mt-3 text-sm text-slate-400">
-                {info ? (
-                  <span className={`text-lg font-semibold ${info.cls}`}>{info.label}</span>
-                ) : (
-                  <span className="text-slate-500">En attente de données du capteur…</span>
-                )}
-              </div>
-              <div className="mt-4">
-                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
-                  {events.length === 0 ? (
-                    <p className="text-sm text-slate-500">En attente d’événements…</p>
+            <div className="grid gap-5 lg:grid-cols-2">
+              {/* Journal d'état */}
+              <div className={tileCard}>
+                <h3 className={tileTitle}>📋 État actuel &amp; journal</h3>
+                <div className="mt-3 text-sm text-slate-400">
+                  {info ? (
+                    <span className={`text-lg font-semibold ${info.cls}`}>{info.label}</span>
                   ) : (
-                    events.map((ev, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm">
-                        <span className="shrink-0 text-[11px] text-slate-500">{ev.time}</span>
-                        <span className={toneCls[ev.tone] || 'text-emerald-300'}>{ev.msg}</span>
-                      </li>
-                    ))
+                    <span className="text-slate-500">En attente de données du capteur…</span>
                   )}
-                </ul>
+                </div>
+                <div className="mt-4">
+                  <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                    {events.length === 0 ? (
+                      <p className="text-sm text-slate-500">En attente d’événements…</p>
+                    ) : (
+                      events.map((ev, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm">
+                          <span className="shrink-0 text-[11px] text-slate-500">{ev.time}</span>
+                          <span className={toneCls[ev.tone] || 'text-emerald-300'}>{ev.msg}</span>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Panneau de commandes */}
+              <div className={tileCard}>
+                <h3 className={tileTitle}>🎛️ Commandes du feu</h3>
+
+                {/* Sélecteur de mode */}
+                <p className="mt-4 mb-2 text-[11px] uppercase tracking-wider text-slate-500">Mode du système</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {MODES.map((m) => {
+                    const isActive = modeActif === m.v;
+                    return (
+                      <button
+                        key={m.v}
+                        onClick={() => selectedId && api.setMode(selectedId, m.v)}
+                        className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150 ${
+                          isActive ? m.active : m.idle
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  {modeActif === 0
+                    ? 'Auto : le feu réagit seul aux piétons détectés.'
+                    : modeActif === 1
+                    ? 'Vert forcé : le feu reste vert, les piétons attendent.'
+                    : modeActif === 2
+                    ? 'Rouge forcé : le feu reste rouge, circulation coupée.'
+                    : 'Maintenance : feu figé, circulation coupée.'}
+                </p>
+
+                {/* Bouton piéton */}
+                <div className="mt-5 border-t border-slate-800 pt-4">
+                  <p className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Demande de passage</p>
+                  {modeActif === 0 ? (
+                    <button
+                      onClick={() => selectedId && api.requestPedestrianCrossing(selectedId)}
+                      className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-cyan-500/20 transition-all duration-150 hover:from-cyan-500 hover:to-cyan-400 active:scale-[0.98]"
+                    >
+                      <span className="text-lg">🚸</span> Demander passage piéton
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-500"
+                    >
+                      <span className="text-lg opacity-60">🚸</span> Indisponible (mode actif)
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
