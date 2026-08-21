@@ -12,14 +12,15 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 
+# Copy source
+COPY frontend/ ./
+
 # Copy arduino folder for ?raw import in Montage.jsx. L'import est
 # « ../../../arduino/... » depuis src/pages/ → résout vers /app/arduino/
-# (3 niveaux au-dessus de /app/frontend). On copie donc à la racine /app,
-# pas dans /app/frontend, sans quoi l'import ?raw échoue au build.
+# (3 niveaux au-dessus de /app/frontend). On copie APRES « COPY frontend/ ./ »
+# (qui écrase /app/frontend) et à la racine /app, hors de /app/frontend.
 COPY arduino/ /app/arduino/
 
-# Copy source and build
-COPY frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: Backend + Static Server ----
