@@ -13,6 +13,7 @@ import { useLiveData } from '../hooks/useLiveData.jsx';
 import { fmtTime, fmtValue } from '../lib/format.js';
 import {
   SEUIL_DEFAUT, FEU_INFO, Lamp, toneCls, copierSansBug, btn,
+  CAPTEUR_ULTRASON_MIN, CAPTEUR_ULTRASON_MAX, CAPTEUR_MARGE_CM,
 } from '../lib/feu.jsx';
 import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -25,8 +26,13 @@ export default function Feu() {
   const [copied, setCopied] = useState(false);
   const [events, setEvents] = useState([]);
   const [distHistory, setDistHistory] = useState([]);
+  // Une commande utilisateur a-t-elle été émise ? Tant que non, on n'affiche
+  // aucune « détection de piéton » : le capteur et le bouton de passage sont
+  // les SEULS moyens de provoquer un passage, et ils ne comptent qu'après coup.
+  const [commandeEmise, setCommandeEmise] = useState(false);
   const prev = useRef({});
   const prevMode = useRef(undefined);
+  const onlineRef = useRef(null);
 
   // ---- Chargement : devices + leurs datastreams (pour mapper clé → id) ----
   async function load() {
@@ -57,6 +63,16 @@ export default function Feu() {
   const byKey = device?.byKey || {};
   const online =
     device && deviceStatus ? (selectedId in deviceStatus ? deviceStatus[selectedId] : device.online) : null;
+  onlineRef.current = online;
+
+  // ---- Au chargement d'un device : on force le mode Auto (sans compter ça
+  // comme une commande utilisateur) et on oublie toute commande précédente. ----
+  useEffect(() => {
+    if (!selectedId) return;
+    setCommandeEmise(false);
+    api.setMode(selectedId, 0).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [device?.id]);
 
   // ---- Valeurs en direct (WebSocket) ----
   const dist = liveData?.[byKey.distance];
@@ -78,7 +94,7 @@ export default function Feu() {
         return api.getHistory(byKey.distance, 60).catch(() => []);
       })
       .then((hist) => {
-        if (!annule && hist) setDistHistory(hist.map((p) => ({ createdAt: p.createdAt, value: p.value })));
+        if (!annule && hist && onlineRef.current) setDistHistory(hist.map((p) => ({ createdAt: p.createdAt, value: p.value })));
       })
       .catch(() => {});
     return () => { annule = true; };
@@ -89,9 +105,16 @@ export default function Feu() {
   useEffect(() => {
     const d = liveData?.[byKey.distance];
     if (!device || !d) return;
+    if (online === false) return; // hors ligne → on laisse le graphe effacé
     setDistHistory((h) => [...h, { createdAt: d.createdAt, value: d.value }].slice(-60));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveData?.[byKey.distance]?.value, byKey.distance, device?.id]);
+
+  // ---- Hors ligne : on vide le graphe (il reprendra à la reconnexion) ----
+  useEffect(() => {
+    if (online === false) setDistHistory([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
 
   // ---- Journal : changement d'état du feu ----
   function addEvent(msg, tone) {
@@ -105,8 +128,13 @@ export default function Feu() {
         feuVal === 3 ? 'maint' : feuVal === 2 ? 'rouge' : feuVal === 1 ? 'orange' : 'vert');
     }
     if (pedVal !== undefined && was.p !== undefined && pedVal !== was.p) {
-      if (pedVal === 1) addEvent(`🚸 Piéton détecté — distance ${fmtValue(distVal)} cm`, 'danger');
-      else addEvent('✓ Passage libre — aucun piéton', 'ok');
+      // Le capteur de distance et le bouton de passage sont les SEULS moyens
+      // de déclencher un passage : on ne journalise une détection qu'après
+      // qu'une commande utilisateur a été émise (sinon le capteur reste muet).
+      if (commandeEmise) {
+        if (pedVal === 1) addEvent(`🚸 Piéton détecté — distance ${fmtValue(distVal)} cm`, 'danger');
+        else addEvent('✓ Passage libre — aucun piéton', 'ok');
+      }
     }
     prev.current = { f: feuVal, p: pedVal, d: distVal };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -129,6 +157,20 @@ export default function Feu() {
   const modeActif = liveData?.[byKey.mode]?.value;
   const distPoints = distHistory.map((p) => ({ t: p.createdAt, v: p.value }));
   const NB_MAX = 60;
+  const offline = online === false;
+
+  // Domaine Y calé sur la vraie plage du capteur ultrasonique HC-SR04 :
+  // minimum fermement borné à la limite basse du capteur, marge autour des
+  // valeurs détectées, le tout replié dans [2, 400].
+  const distVals = distPoints.map((p) => p.v).filter((v) => typeof v === 'number' && !Number.isNaN(v));
+  const distDomain = (() => {
+    if (distVals.length === 0) return [CAPTEUR_ULTRASON_MIN, CAPTEUR_ULTRASON_MAX];
+    const dataMin = Math.min(...distVals);
+    const dataMax = Math.max(...distVals);
+    const lo = Math.max(CAPTEUR_ULTRASON_MIN, Math.min(dataMin - CAPTEUR_MARGE_CM, dataMax - CAPTEUR_MARGE_CM));
+    const hi = Math.min(CAPTEUR_ULTRASON_MAX, Math.max(dataMax + CAPTEUR_MARGE_CM, dataMin + CAPTEUR_MARGE_CM));
+    return [lo, hi];
+  })();
 
   // Modes du feu (sélecteur regroupé dans le panneau « Commandes »)
   const MODES = [
@@ -245,12 +287,12 @@ export default function Feu() {
                 <p className="text-5xl font-black text-cyan-300">
                   {fmtValue(distVal)} <span className="text-xl font-normal text-slate-400">cm</span>
                 </p>
-                {pedVal === 1 ? (
-                  <span className="rounded-full bg-red-500/15 px-3 py-1 text-sm font-semibold text-red-300">🚸 Piéton détecté</span>
-                ) : pedVal === 0 ? (
-                  <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-sm font-semibold text-emerald-300">✓ Passage libre</span>
+                {commandeEmise && pedVal === 1 ? (
+                  <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-sm font-semibold text-cyan-300">📏 Distance critique</span>
+                ) : commandeEmise && pedVal === 0 ? (
+                  <span className="rounded-full bg-fuchsia-500/15 px-3 py-1 text-sm font-semibold text-fuchsia-300">🔘 Bouton poussoir</span>
                 ) : (
-                  <span className="text-sm text-slate-500">En attente…</span>
+                  <span className="text-sm text-slate-500">En attente de commande…</span>
                 )}
               </div>
               <div className="mt-3 h-40 w-full">
@@ -258,7 +300,7 @@ export default function Feu() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={distPoints.slice(-NB_MAX)} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                       <XAxis dataKey="t" tickFormatter={(t) => fmtTime(t)} tick={{ fontSize: 10, fill: '#64748b' }} stroke="#1e293b" minTickGap={40} />
-                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} stroke="#1e293b" width={34} domain={[0, 'dataMax + 20']} />
+                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} stroke="#1e293b" width={34} domain={distDomain} allowDataOverflow />
                       <Tooltip
                         contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 12, fontSize: 12 }}
                         labelFormatter={(t) => fmtTime(t)}
@@ -269,6 +311,8 @@ export default function Feu() {
                       <Line type="monotone" dataKey="v" stroke="#22d3ee" strokeWidth={2} dot={false} isAnimationActive={false} />
                     </LineChart>
                   </ResponsiveContainer>
+                ) : offline ? (
+                  <p className="text-sm text-slate-500">○ Hors ligne — le graphe se vide (dernières valeurs effacées).</p>
                 ) : (
                   <p className="text-sm text-slate-500">En attente de l’historique… (le simulateur doit tourner)</p>
                 )}
@@ -290,7 +334,7 @@ export default function Feu() {
                     <p className="text-3xl font-black text-cyan-300">{compteur ? compteur.value : 0}</p>
                   </div>
                 </div>
-                <span className="text-xs text-slate-500">Compté côté device, affiché en temps réel</span>
+                <span className="text-xs text-slate-500">{offline ? 'Figé (hors ligne)' : 'Compté côté device, affiché en temps réel'}</span>
               </div>
             </div>
           </div>
@@ -302,9 +346,9 @@ export default function Feu() {
               <h3 className={tileTitle}>📋 État actuel &amp; journal</h3>
               <div className="mt-3 text-sm text-slate-400">
                 {info ? (
-                  <span className={`text-lg font-semibold ${info.cls}`}>{info.label}</span>
+                  <span className={`text-lg font-semibold ${info.cls}`}>{info.label}{offline ? ' · figé' : ''}</span>
                 ) : (
-                  <span className="text-slate-500">En attente de données du capteur…</span>
+                  <span className="text-slate-500">{offline ? 'Hors ligne — état figé' : 'En attente de données du capteur…'}</span>
                 )}
               </div>
               <div className="mt-5">
@@ -341,7 +385,7 @@ export default function Feu() {
                   return (
                     <button
                       key={m.v}
-                      onClick={() => selectedId && api.setMode(selectedId, m.v)}
+                      onClick={() => { if (selectedId) { setCommandeEmise(true); api.setMode(selectedId, m.v); } }}
                       className={`rounded-xl px-3 py-3 text-sm font-semibold transition-all duration-150 ${
                         isActive ? m.active : m.idle
                       }`}
@@ -366,7 +410,7 @@ export default function Feu() {
                 <p className="mb-3 text-[11px] uppercase tracking-wider text-slate-500">Demande de passage</p>
                 {modeActif === 0 ? (
                   <button
-                    onClick={() => selectedId && api.requestPedestrianCrossing(selectedId)}
+                    onClick={() => { if (selectedId) { setCommandeEmise(true); api.requestPedestrianCrossing(selectedId); } }}
                     className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-cyan-500/20 transition-all duration-150 hover:from-cyan-500 hover:to-cyan-400 active:scale-[0.98]"
                   >
                     <span className="text-lg">🚸</span> Demander passage piéton

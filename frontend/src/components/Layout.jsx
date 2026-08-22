@@ -63,6 +63,9 @@ export default function Layout() {
             <NavLink to="/cycles" className="px-3 py-2 rounded-xl text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800">
               📈 Cycles
             </NavLink>
+            <NavLink to="/parametres" className="px-3 py-2 rounded-xl text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800">
+              ⚙️ Paramètres
+            </NavLink>
             <NavLink to="/montage" className="px-3 py-2 rounded-xl text-sm font-medium transition-colors text-slate-300 hover:bg-slate-800">
               🔧 Montage
             </NavLink>

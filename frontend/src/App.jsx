@@ -13,6 +13,7 @@ import Devices from './pages/Devices.jsx';
 import DeviceDetail from './pages/DeviceDetail.jsx';
 import Feu from './pages/Feu.jsx';
 import Cycles from './pages/Cycles.jsx';
+import Parametres from './pages/Parametres.jsx';
 import Montage from './pages/Montage.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="devices/:id" element={<RequireAuth><DeviceDetail /></RequireAuth>} />
             <Route path="feu" element={<RequireAuth><Feu /></RequireAuth>} />
             <Route path="cycles" element={<RequireAuth><Cycles /></RequireAuth>} />
+            <Route path="parametres" element={<RequireAuth><Parametres /></RequireAuth>} />
             <Route path="montage" element={<RequireAuth><Montage /></RequireAuth>} />
           </Route>
           <Route path="login" element={<Login />} />

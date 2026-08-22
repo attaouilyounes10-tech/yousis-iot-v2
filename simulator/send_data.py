@@ -96,7 +96,14 @@ class FeuScenario:
     DUREE_ORANGE = 3.0    # s : ambre — les voitures s'apprêtent à s'arrêter (standard FR)
     ROUGE_MIN = 5.0       # s : rouge minimal = temps de traversée de sécurité (bouton)
     ROUGE_MAX = 30.0      # s : rouge maximal (sécurité si présence piéton anormale)
-    ROUTE_DEGAGEE = (220.0, 400.0)  # cm : route libre (au-dessus du seuil → pas de piéton)
+    # Borne du cycle vert (VERT_MAX) — le feu boucle périodiquement même sans
+    # piéton (évite 20 min au vert). Elle vaut par défaut DUREE_VERT_DEFAUT,
+    # mais peut être surchargée par la plateforme via 'duree_vert' (voir
+    # appliquer_commandes) : en pratique le vert tourne autour de duree_vert
+    # + la demande piéton. On garde une borne de sécurité indépendante.
+    VERT_MAX = 15.0       # s : borne absolue du vert même sans piéton (sécurité)
+    DUREE_VERT_DEFAUT = 5.0  # s : durée minimale du vert (commandée depuis la plateforme)
+    ROUTE_DEGAGEE = (120.0, 220.0)  # cm : route libre, dans la portée fiable du HC-SR04 (≤250 cm)
     PIETON_DIST = (20.0, 70.0)      # cm : piéton devant le capteur
     PIETON_DUREE = (4.0, 8.0)       # s : temps de traversée REALISTE du piéton
     PROCHAIN_PIETON = (12.0, 20.0)  # s de vert calme avant le piéton suivant (vert le plus long, mais réactif)
@@ -104,6 +111,8 @@ class FeuScenario:
     def __init__(self, seuil=SEUIL_DEFAULT, compteur_init=0):
         self.seuil = seuil
         self.duree_vert = 5.0      # s : durée minimale du vert (commandée depuis la plateforme)
+        self.duree_orange = 3.0    # s : durée de l'ambre (commandée depuis la plateforme)
+        self.duree_rouge = 8.0     # s : durée du rouge = temps de traversée (commandée depuis la plateforme)
         self.mode = 0              # 0 auto · 1 vert forcé · 2 rouge forcé · 3 maintenance
         self._distance = random.uniform(*self.ROUTE_DEGAGEE)
         self._ped_until = 0.0      # fin de la présence du piéton (time.monotonic)
@@ -124,10 +133,21 @@ class FeuScenario:
     def _now():
         return time.monotonic()
 
-    def appliquer_commandes(self, duree_vert, mode, bouton_pieton, reset_compteur=False):
-        """Applique les commandes lues sur /latest (tableau de bord)."""
+    def appliquer_commandes(self, duree_vert, mode, bouton_pieton, reset_compteur=False,
+                             duree_orange=None, duree_rouge=None):
+        """Applique les commandes lues sur /latest (tableau de bord).
+
+        Les durées (VERT / ORANGE / ROUGE) sont réglables finement depuis la
+        page « Paramètres » du site : on les borne pour rester réaliste et
+        éviter un feu bloqué. Elles persistent en base (device_commands) donc
+        survivent à un redémarrage du simulateur.
+        """
         if duree_vert is not None and 1 <= duree_vert <= 60:
             self.duree_vert = duree_vert
+        if duree_orange is not None and 1 <= duree_orange <= 10:
+            self.duree_orange = duree_orange
+        if duree_rouge is not None and 2 <= duree_rouge <= 60:
+            self.duree_rouge = duree_rouge
         if mode in (0, 1, 2, 3):
             # Sortie de MAINTENANCE (3 -> autre) : le feu doit repartir du VERT.
             # Sinon _feu reste bloqué en état 3, que la machine à états AUTO ne
@@ -197,22 +217,28 @@ class FeuScenario:
         elif self._feu == FEU_VERT:
             # Vert pendant au moins `duree_vert` (commandée depuis le tableau de
             # bord) : on ne coupe pas le vert trop tôt pour laisser passer les
-            # voitures. Passé ce délai, un piéton détecté (ou le bouton)
-            # déclenche l'orange immédiatement.
-            if demande and (now - self._cycle_start) >= self.duree_vert:
+            # voitures. Dès qu'un piéton est détecté (ou le bouton) après ce
+            # délai, on passe à l'orange. SANS demande, le vert est borné par
+            # VERT_MAX : le feu boucle périodiquement (comme un vrai feu de
+            # carrefour) au lieu de rester 20 min au vert entre deux piétons.
+            elapsed = now - self._cycle_start
+            if (demande and elapsed >= self.duree_vert) or elapsed >= self.VERT_MAX:
                 # Piéton détecté OU bouton : on ENGAGE la traversée et on passe
                 # à l'orange immédiatement (mémorisé pour toute la phase rouge).
                 self._traverse_en_cours = True
                 self._feu = FEU_ORANGE
-                self._phase_until = now + self.DUREE_ORANGE
+                self._phase_until = now + self.duree_orange
         elif self._feu == FEU_ORANGE and now >= self._phase_until:
             # Entrée en rouge : la traversée est déjà engagée, on fixe sa durée.
             # `traverse_min` = temps de traversée réaliste borné par ROUGE_MIN ;
             # `rouge_max_abs` = borne absolue = entrée + ROUGE_MAX (sécurité si
             # présence piéton anormale). ROUGE_MAX est une DURÉE, pas un instant.
+            # La durée de rouge de BASE vient de `duree_rouge` (réglée depuis le
+            # site) ; on garde ROUGE_MIN comme plancher de sécurité et ROUGE_MAX
+            # comme borne absolue.
             self._feu = FEU_ROUGE
             self._traverse_min = now + min(
-                max(self.PIETON_DUREE[1], self.ROUGE_MIN), self.ROUGE_MAX
+                max(self.duree_rouge, self.ROUGE_MIN), self.ROUGE_MAX
             )
             self._rouge_max_abs = now + self.ROUGE_MAX
         elif self._feu == FEU_ROUGE:
@@ -343,13 +369,16 @@ def main():
                     _, latest = request(args.base, "/api/devices/" + args.token + "/latest", token=args.token)
                     cmd = {s["key"]: s["value"] for s in latest.get("datastreams", [])}
                     duree = float(cmd["duree_vert"]) if cmd.get("duree_vert") is not None else None
+                    dOrange = float(cmd["duree_orange"]) if cmd.get("duree_orange") is not None else None
+                    dRouge = float(cmd["duree_rouge"]) if cmd.get("duree_rouge") is not None else None
                     mode = int(cmd["mode"]) if cmd.get("mode") is not None else None
                     bouton = int(cmd["bouton_pieton"]) if cmd.get("bouton_pieton") is not None else None
                     # RAZ compteur : impulsion -1 sur 'compteur_pietons' (consommée côté plateforme)
                     raz = cmd.get("compteur_pietons") == -1
                 except Exception:
                     pass  # backend indisponible ponctuellement -> valeurs courantes conservées
-                scenario.appliquer_commandes(duree, mode, bouton, reset_compteur=raz)
+                scenario.appliquer_commandes(duree, mode, bouton, reset_compteur=raz,
+                                             duree_orange=dOrange, duree_rouge=dRouge)
 
                 distance, pedestrian, feu, compteur = scenario.etat()
                 for key, value in (("distance", distance), ("pedestrian", pedestrian), ("feu", feu), ("compteur_pietons", compteur)):

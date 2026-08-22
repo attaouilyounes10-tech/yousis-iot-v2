@@ -78,4 +78,8 @@ export const api = {
   setMode: (deviceId, mode) => req('POST', `/devices/${deviceId}/feu/mode`, { mode }),
   requestPedestrianCrossing: (deviceId) => req('POST', `/devices/${deviceId}/feu/pedestrian`),
   resetCounter: (deviceId) => req('POST', `/devices/${deviceId}/feu/reset-counter`),
+  // Réglage fin des durées du feu (page « Paramètres »). On pousse une commande
+  // sur le datastream correspondant ; le simulateur la lit via GET /latest et
+  // l'applique. Persistante en base → survit à un redémarrage du simulateur.
+  setDuree: (deviceId, key, value) => req('POST', `/devices/${deviceId}/commands`, { key, value }),
 };

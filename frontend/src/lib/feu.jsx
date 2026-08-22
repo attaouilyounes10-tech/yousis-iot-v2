@@ -13,6 +13,14 @@ import { fmtTime } from './format.js';
 // Seuil de détection piéton (doit suivre --seuil du simulateur par défaut)
 export const SEUIL_DEFAUT = 80;
 
+// Plage réelle d'un capteur ultrasonique HC-SR04 (en cm).
+// Sert de cadre au domaine Y du graphe de distance : le minimum est fermement
+// borné à la limite basse physique du capteur (≈ 2 cm), le maximum à sa portée
+// fiable en conditions réelles (≈ 250 cm, au-delà les mesures sont peu fiables).
+export const CAPTEUR_ULTRASON_MIN = 0;    // limite basse de l'échelle (le capteur ne descend pas sous ~2 cm)
+export const CAPTEUR_ULTRASON_MAX = 250;  // portée fiable réaliste d'un HC-SR04
+export const CAPTEUR_MARGE_CM = 15;       // marge autour des valeurs détectées
+
 // Descriptif de chaque état du feu (voitures)
 export const FEU_INFO = {
   0: { label: 'Feu vert — les voitures roulent',   cls: 'text-emerald-300', lamp: 'vert' },
