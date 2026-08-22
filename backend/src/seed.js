@@ -79,7 +79,24 @@ async function seed() {
     }
     console.log(`✓ ${DEMO_DEVICE.datastreams.length} datastreams créés pour le device`);
   } else {
-    console.log(`✓ Datastreams déjà présents (${dsCount}) pour le device`);
+    // Device déjà existant : on ajoute UNIQUEMENT les datastreams manquants
+    // (idempotent par clé). Ainsi, si on ajoute plus tard de nouveaux
+    // datastreams au modèle (ex: duree_orange / duree_rouge pour la page
+    // « Paramètres »), ils apparaissent sur le device de prod AU REDÉPLOI
+    // suivant, sans toucher aux données existantes.
+    const existantes = new Set(
+      db.prepare('SELECT key FROM datastreams WHERE device_id = ?').all(deviceId).map((r) => r.key)
+    );
+    const manquantes = DEMO_DEVICE.datastreams.filter((ds) => !existantes.has(ds.key));
+    if (manquantes.length) {
+      const stmt = db.prepare(
+        'INSERT INTO datastreams (device_id, key, unit, data_type) VALUES (?, ?, ?, ?)'
+      );
+      for (const ds of manquantes) stmt.run(deviceId, ds.key, ds.unit, ds.data_type);
+      console.log(`✓ ${manquantes.length} datastream(s) ajouté(s) au device existant : ${manquantes.map((d) => d.key).join(', ')}`);
+    } else {
+      console.log(`✓ Datastreams déjà présents (${dsCount}) pour le device`);
+    }
   }
 }
 
