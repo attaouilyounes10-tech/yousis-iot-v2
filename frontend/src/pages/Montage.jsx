@@ -36,7 +36,7 @@ export default function Montage() {
   // n'y a aucun import relatif à casser au build. Chargement au montage.
   useEffect(() => {
     let annule = false;
-    fetch('/arduino/esp32_youxis_feu.ino')
+    fetch('/arduino/esp32_youxis_feu.ino', { cache: 'no-store' })
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))
       .then((txt) => { if (!annule) setFeuCode(txt); })
       .catch(() => { if (!annule) setFeuCode('// Code Arduino indisponible.'); });
