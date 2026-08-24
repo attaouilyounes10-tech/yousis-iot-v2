@@ -1,34 +1,38 @@
 /**
  * ============================================================
- *  YOUXIS IOT v2 — ESP32 « Feu intelligent » (version adaptée)
+ *  YOUXIS IOT v2 — ESP32 « Feu intelligent »
  * ============================================================
- *  Anciennement : sketch Blynk + ThingSpeak.
- *  Désormais : LA MEME LOGIQUE MATERIELLE, mais branchée sur la
- *  plateforme YOUXIS (un seul site fait le dashboard + l'historique).
+ *  Firmware natif YOUXIS : la carte se connecte directement à NOTRE
+ *  site web (backend Node + base SQLite), sans aucun service tiers.
+ *  Dashboard temps réel (WebSocket) + historique persistant (SQLite).
  *
- *  → Blynk        est remplacé par le DASHBOARD YOUXIS (WebSocket)
- *  → ThingSpeak   est remplacé par la BASE SQLite du backend (data_points)
+ *  Cycle du feu (côté device, comme sur le simulateur Python) :
+ *    VERT --piéton/bouton--> ORANGE (duree_orange) --> ROUGE (duree_rouge)
+ *    --> VERT, et ainsi de suite. Duréescommandées depuis la page
+ *    « Paramètres » du site.
  *
  *  Le device :
  *   1) mesure la distance (HC-SR04) -> pedestrian = 1 si < SEUIL
- *   2) comptabilise les passages piétons
+ *   2) comptabilise les passages piétons (front montant + hystérésis)
  *   3) lit chaque seconde les COMMANDES du dashboard (GET /latest) :
- *        duree_vert (s), mode (0 auto / 1 vert forcé / 2 rouge forcé),
+ *        duree_vert (s), duree_orange (s), duree_rouge (s),
+ *        mode (0 auto / 1 vert forcé / 2 rouge forcé / 3 maintenance),
  *        bouton_pieton (impulsion)
- *   4) pilote le feu tricolore (machine à états ROUGE/VERT/ORANGE/PIETON)
- *   5) envoie distance, pedestrian, feu, compteur à l'API YOUXIS
+ *   4) pilote le feu tricolore (machine à états)
+ *   5) envoie distance, pedestrian, feu, compteur vers l'API YOUXIS
  *      (POST /api/data avec X-Device-Token)
  *
- *  ── À ADAPTER dans les "" ci-dessous :
- *     1) identifiants WiFi
+ *  ── À RENSEIGNER dans la section « Configuration » ci-dessous :
+ *     1) WIFI_SSID / WIFI_PASS : ton réseau
  *     2) BACKEND_HOST : IP locale de ton PC (ipconfig)  OU  hôte Ngrok
  *        + BACKEND_PORT (3001 en local, 443 si tunnel Ngrok https)
  *     3) DEVICE_TOKEN : copié dans la page Devices de YOUXIS IOT
- *        (crée un device « Feu intelligent » via le bouton du dashboard,
+ *        (crée un device « Feu intelligent » via le bouton du dashboard ;
  *         il faut les datastreams : distance, pedestrian, feu,
- *         duree_vert, mode, bouton_pieton, compteur_pietons)
+ *         duree_vert, duree_orange, duree_rouge, mode,
+ *         bouton_pieton, compteur_pietons)
  *
- *  Broches (identiques à ton ancien sketch) :
+ *  Broches :
  *    Feu voitures : ROUGE 25 · ORANGE 26 · VERT 27
  *    Feu piétons  : ROUGE 32 · VERT 33
  *    Bouton 14 (pull-up) · TRIG 4 · ECHO 35 · BUZZER 12
@@ -37,7 +41,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-// ====== À ADAPTER ======
+// ======================= CONFIGURATION =======================
 const char* WIFI_SSID = "WIN-N9NOB6KGKPH 1870";
 const char* WIFI_PASS = "D081@a62";
 
@@ -47,7 +51,7 @@ const char* BACKEND_HOST = "192.168.11.105";
 const int   BACKEND_PORT = 3001;
 
 const char* DEVICE_TOKEN = "METTRE_TOKEN_DEVICE_YOUXIS";
-// =======================
+// =============================================================
 
 // ----- Broches -----
 const int PIN_ROUGE   = 25;
@@ -63,16 +67,20 @@ const int PIN_BUZZER  = 12;
 const float SEUIL_DISTANCE = 40.0;           // cm : sous ce seuil -> piéton
 
 const unsigned long WIFI_TIMEOUT = 10000;
-const unsigned long COOLDOWN = 5000;         // anti-répétition détection
+const unsigned long COOLDOWN = 5000;         // anti-répétition détection (ms)
+const unsigned long INTERVALLE_ENVOI = 1000; // lecture commandes 1x/sec
 
-// Durées de la machine à états (ms) — harmonisées avec le simulateur
-const unsigned long dureeRouge  = 10000;     // le piéton traverse (10 s)
-unsigned long dureeVert = 5000;             // vert minimal (>= 5 s), modifiable depuis le dashboard
-const unsigned long dureeOrange = 3000;     // les voitures s'arrêtent (3 s)
-const unsigned long dureePieton = 4000;     // temps de traversée du piéton (4 s)
+// Durées de la machine à états (ms) — valeurs par défaut, surchargées
+// à distance depuis la page « Paramètres » du site (duree_*/s).
+const unsigned long DUREE_VERT_DEF  = 5000;  // vert (>= 5 s)
+const unsigned long DUREE_ORANGE_DEF = 3000;  // ambre (3 s)
+const unsigned long DUREE_ROUGE_DEF  = 8000; // piéton traverse (≈ 8 s)
+const unsigned long DUREE_PIETON_DEF = 4000; // temps de traversée (état PIETON)
 
 // ----- Commandes reçues du dashboard (GET /latest) -----
-float dureeVertCmd = 5.0f;   // s (>= 5 s)
+unsigned long dureeVertCmd  = DUREE_VERT_DEF;   // ms (>= 5 s)
+unsigned long dureeOrangeCmd = DUREE_ORANGE_DEF; // ms
+unsigned long dureeRougeCmd  = DUREE_ROUGE_DEF;  // ms
 int   mode = 0;              // 0 auto · 1 vert forcé · 2 rouge forcé · 3 maintenance
 bool  boutonHaut = false;    // impulsion bouton_pieton
 bool  boutonPrec = false;    // détection de front
@@ -82,11 +90,12 @@ bool wifiOK = false;
 bool demandePieton = false;
 bool ancienEtatBouton = HIGH;
 int  compteurPietons = 0;
+bool pedestrianActuel = false;   // détection courante (avec hystérésis)
+bool pedestrianPrec   = false;   // détection précédente (front montant)
 unsigned long derniereDetection = 0;
 bool buzzerEtat = false;
 unsigned long dernierBip = 0;
 unsigned long dernierEnvoi = 0;
-const unsigned long INTERVALLE_ENVOI = 1000;   // envoi vers YOUXIS toutes les 1 s
 
 enum EtatFeu { ROUGE, VERT, ORANGE, PIETON, MAINTENANCE };
 EtatFeu etatActuel = ROUGE;
@@ -107,7 +116,7 @@ void connecterWiFi() {
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
     wifiOK = true;
-    Serial.println("WiFi Connecte");
+    Serial.println("WiFi connecte");
     Serial.print("Adresse IP : ");
     Serial.println(WiFi.localIP());
   } else {
@@ -117,9 +126,9 @@ void connecterWiFi() {
 }
 
 // ============================================================
-//  Envoi vers YOUXIS (remplace Blynk + ThingSpeak)
+//  Envoi d'une valeur vers l'API YOUXIS (POST /api/data)
 // ============================================================
-void envoyerYOUGIS(const char* cle, float valeur) {
+void envoyerYOUXIS(const char* cle, float valeur) {
   if (!wifiOK || WiFi.status() != WL_CONNECTED) return;
 
   HTTPClient http;
@@ -136,7 +145,7 @@ void envoyerYOUGIS(const char* cle, float valeur) {
 }
 
 // ============================================================
-//  Lecture des commandes du dashboard (remplace BLYNK_WRITE)
+//  Lecture des commandes du dashboard (GET /api/devices/:token/latest)
 // ============================================================
 float extraireNombre(const String& json, const String& cle) {
   String motif = "\"key\":\"" + cle + "\"";
@@ -163,10 +172,17 @@ void lireCommandesYOUXIS() {
   int code = http.GET();
   if (code >= 200 && code < 300) {
     String body = http.getString();
+    // Durées (secondes -> ms), bornées pour rester réalistes
     float dv = extraireNombre(body, "duree_vert");
-    if (dv > 0) dureeVertCmd = dv;
+    if (dv >= 1 && dv <= 60) dureeVertCmd = (unsigned long)(dv * 1000.0f);
+    float do_ = extraireNombre(body, "duree_orange");
+    if (do_ >= 1 && do_ <= 10) dureeOrangeCmd = (unsigned long)(do_ * 1000.0f);
+    float dr = extraireNombre(body, "duree_rouge");
+    if (dr >= 2 && dr <= 60) dureeRougeCmd = (unsigned long)(dr * 1000.0f);
+    // Mode système
     float m = extraireNombre(body, "mode");
     if (m >= 0 && m <= 3) mode = (int)m;
+    // Bouton piéton (impulsion)
     float bp = extraireNombre(body, "bouton_pieton");
     boutonHaut = (bp == 1);
   }
@@ -214,21 +230,22 @@ void entrerDansEtat(EtatFeu nouvelEtat) {
       digitalWrite(PIN_ROUGE, HIGH);
       digitalWrite(PIN_PIET_V, HIGH);
       etatTexte = "PIETON"; feuCode = 2; pedCode = 1;
-      // comptage d'un passage piéton
-      compteurPietons++;
+      // NB : le comptage des passages se fait sur le FRONT MONTANT de la
+      // détection (voir loop()), pas ici — sinon un retour en état PIETON
+      // (ex. mode rouge forcé) re-compterait le même passage.
       break;
     case MAINTENANCE:
-      // Feu orange clignotant + buzzer (géré par clignoteMaintenance() dans loop)
+      // Feu orange clignotant + buzzer (géré par clignoterMaintenance() dans loop)
       etatTexte = "MAINTENANCE"; feuCode = 3; pedCode = 0;
       break;
   }
 
   Serial.println(etatTexte);
 
-  // Envoi de l'état vers YOUXIS (remplace Blynk V0 + LED V2)
-  envoyerYOUGIS("feu", feuCode);
-  envoyerYOUGIS("pedestrian", pedCode);
-  envoyerYOUGIS("compteur_pietons", compteurPietons);
+  // Envoi de l'état vers YOUXIS
+  envoyerYOUXIS("feu", feuCode);
+  envoyerYOUXIS("pedestrian", pedCode);
+  envoyerYOUXIS("compteur_pietons", compteurPietons);
 }
 
 void gererBuzzer() {
@@ -246,7 +263,6 @@ void gererBuzzer() {
 }
 
 // Feu en maintenance : orange clignotant (non bloquant) + buzzer.
-// L'état 3 est envoyé vers YOUXIS à chaque entrée dans l'état.
 void clignoterMaintenance() {
   static unsigned long dernierClignote = 0;
   static bool orangeOn = false;
@@ -265,7 +281,7 @@ void clignoterMaintenance() {
 }
 
 // ============================================================
-//  Bouton physique + ultrason (inchangés)
+//  Bouton physique + ultrason
 // ============================================================
 void lireBouton() {
   bool etat = digitalRead(PIN_BOUTON);
@@ -325,15 +341,32 @@ void loop() {
     Serial.print("Distance : ");
     Serial.print(distance);
     Serial.println(" cm");
-    envoyerYOUGIS("distance", distance);   // historique + graphe (remplace ThingSpeak)
+    envoyerYOUXIS("distance", distance);   // historique + graphe
 
-    if (distance >= 1 && distance < SEUIL_DISTANCE) {
-      if (millis() - derniereDetection >= COOLDOWN) {
-        demandePieton = true;
-        derniereDetection = millis();
-        Serial.println("Demande par Ultrason");
-      }
+    // Détection piéton avec HYSTÉRÉSIS (bande morte) : on entre en « piéton »
+    // sous le seuil, on ne « sort » qu'au-dessus de SEUIL_DISTANCE*1.25. Sans
+    // ça, le bruit du capteur autour du seuil générerait des allers-retours
+    // 0/1 comptés comme autant de passages fantômes (comme dans le simulateur).
+    if (pedestrianPrec) {
+      pedestrianActuel = (distance >= 1 && distance < SEUIL_DISTANCE * 1.25);
+    } else {
+      pedestrianActuel = (distance >= 1 && distance < SEUIL_DISTANCE);
     }
+
+    // FRONT MONTANT (0 -> 1) : un passage piéton est compté UNE SEULE FOIS,
+    // avec un COOLDOWN anti-répétition (filtre le bruit du capteur). Le
+    // compteur est incrémenté puis envoyé immédiatement vers YOUXIS.
+    if (pedestrianActuel && !pedestrianPrec) {
+      if (millis() - derniereDetection >= COOLDOWN) {
+        derniereDetection = millis();
+        compteurPietons++;
+        envoyerYOUXIS("compteur_pietons", compteurPietons);
+        Serial.println("Passage pieton comptabilise (ultrason)");
+      }
+      demandePieton = true;   // déclenche la traversée (pilote le feu)
+      Serial.println("Demande par Ultrason");
+    }
+    pedestrianPrec = pedestrianActuel;
   }
 
   gererBuzzer();
@@ -346,15 +379,12 @@ void loop() {
     Serial.println("Demande par Dashboard (bouton_pieton)");
   }
 
-  // ---- Application de la durée du vert commandée ----
-  dureeVert = (unsigned long)(dureeVertCmd * 1000.0f);
-
   // ---- Modes forcés (dashboard) ----
   if (mode == 3) {            // MAINTENANCE : feu orange clignotant + buzzer
     if (etatActuel != MAINTENANCE) {
       entrerDansEtat(MAINTENANCE);
-      envoyerYOUGIS("feu", 3);
-      envoyerYOUGIS("pedestrian", 0);
+      envoyerYOUXIS("feu", 3);
+      envoyerYOUXIS("pedestrian", 0);
     }
     clignoterMaintenance();
   } else if (mode == 1) {     // VERT forcé : les voitures passent
@@ -362,17 +392,17 @@ void loop() {
   } else if (mode == 2) {     // ROUGE forcé : le piéton traverse
     if (etatActuel != PIETON) entrerDansEtat(PIETON);
   } else {
-    // ---- Machine à états auto ----
+    // ---- Machine à états AUTO (durées commandées depuis le site) ----
     unsigned long ecoule = millis() - tempsEntree;
     switch (etatActuel) {
       case ROUGE:
-        if (ecoule >= dureeRouge) entrerDansEtat(VERT);
+        if (ecoule >= dureeRougeCmd) entrerDansEtat(VERT);
         break;
       case VERT:
-        if (ecoule >= dureeVert) entrerDansEtat(ORANGE);
+        if (ecoule >= dureeVertCmd) entrerDansEtat(ORANGE);
         break;
       case ORANGE:
-        if (ecoule >= dureeOrange) {
+        if (ecoule >= dureeOrangeCmd) {
           if (demandePieton) {
             demandePieton = false;
             entrerDansEtat(PIETON);
@@ -382,7 +412,7 @@ void loop() {
         }
         break;
       case PIETON:
-        if (ecoule >= dureePieton) entrerDansEtat(ROUGE);
+        if (ecoule >= DUREE_PIETON_DEF) entrerDansEtat(ROUGE);
         break;
     }
   }
