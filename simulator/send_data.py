@@ -53,7 +53,12 @@ except Exception:
     pass
 
 DEFAULT_BASE = "http://localhost:3001"
-SEUIL_DEFAULT = 200  # cm : un HC-SR04 voit un piéton approcher à ~2 m (réaliste)
+# Seuil de détection piéton (cm). Aligné sur le reste du système (page
+# Paramètres, feu.jsx -> SEUIL_DEFAUT = 80) : la route libre simulée vagabonde
+# entre 120 et 220 cm, donc un seuil à 200 cm ferait passer la route libre
+# AU-DESSUS et EN-DESSOUS du seuil en permanence -> sur-comptage des passages.
+# À 80 cm : route libre (>=120) jamais détectée, piéton (20-70) toujours.
+SEUIL_DEFAULT = 80  # cm : un HC-SR04 voit un piéton approcher à < 80 cm
 
 # États du feu (lampes des voitures)
 FEU_VERT, FEU_ORANGE, FEU_ROUGE, FEU_MAINT = 0, 1, 2, 3
@@ -247,7 +252,14 @@ class FeuScenario:
             feu = self._mettre_a_jour_feu(False)
             return round(self._distance, 1), pedestrian, feu, self._compteur
         distance = round(self._nouvelle_distance(), 1)
-        pedestrian = 1 if distance < self.seuil else 0
+        # Détection avec HYSTÉRÉSIS (bande morte) : on entre en « piéton »
+        # sous le seuil, mais on ne « sort » qu'au-dessus de seuil*1.25. Sans
+        # ça, le bruit du capteur autour du seuil générerait des allers-retours
+        # 0/1 comptés comme autant de passages fantômes.
+        if self._ped_prec == 1:
+            pedestrian = 1 if distance < self.seuil * 1.25 else 0
+        else:
+            pedestrian = 1 if distance < self.seuil else 0
         # Comptabilise un passage sur le front montant du piéton (comme le sketch ESP32)
         if pedestrian == 1 and self._ped_prec == 0:
             if self._raz_guard:
