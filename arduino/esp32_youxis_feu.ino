@@ -82,6 +82,8 @@ bool wifiOK = false;
 bool demandePieton = false;
 bool ancienEtatBouton = HIGH;
 int  compteurPietons = 0;
+bool pedestrianActuel = false;   // détection courante (avec hystérésis)
+bool pedestrianPrec   = false;   // détection précédente (front montant)
 unsigned long derniereDetection = 0;
 bool buzzerEtat = false;
 unsigned long dernierBip = 0;
@@ -214,8 +216,9 @@ void entrerDansEtat(EtatFeu nouvelEtat) {
       digitalWrite(PIN_ROUGE, HIGH);
       digitalWrite(PIN_PIET_V, HIGH);
       etatTexte = "PIETON"; feuCode = 2; pedCode = 1;
-      // comptage d'un passage piéton
-      compteurPietons++;
+      // NB : le comptage des passages se fait sur le FRONT MONTANT de la
+      // détection (voir loop()), pas ici — sinon un retour en état PIETON
+      // (ex. mode rouge forcé) re-compterait le même passage.
       break;
     case MAINTENANCE:
       // Feu orange clignotant + buzzer (géré par clignoteMaintenance() dans loop)
@@ -327,13 +330,30 @@ void loop() {
     Serial.println(" cm");
     envoyerYOUGIS("distance", distance);   // historique + graphe (remplace ThingSpeak)
 
-    if (distance >= 1 && distance < SEUIL_DISTANCE) {
-      if (millis() - derniereDetection >= COOLDOWN) {
-        demandePieton = true;
-        derniereDetection = millis();
-        Serial.println("Demande par Ultrason");
-      }
+    // Détection piéton avec HYSTÉRÉSIS (bande morte) : on entre en « piéton »
+    // sous le seuil, on ne « sort » qu'au-dessus de SEUIL_DISTANCE*1.25. Sans
+    // ça, le bruit du capteur autour du seuil générerait des allers-retours
+    // 0/1 comptés comme autant de passages fantômes (comme dans le simulateur).
+    if (pedestrianPrec) {
+      pedestrianActuel = (distance >= 1 && distance < SEUIL_DISTANCE * 1.25);
+    } else {
+      pedestrianActuel = (distance >= 1 && distance < SEUIL_DISTANCE);
     }
+
+    // FRONT MONTANT (0 -> 1) : un passage piéton est compté UNE SEULE FOIS,
+    // avec un COOLDOWN anti-répétition (filtre le bruit du capteur). Le
+    // compteur est incrémenté puis envoyé immédiatement vers YOUXIS.
+    if (pedestrianActuel && !pedestrianPrec) {
+      if (millis() - derniereDetection >= COOLDOWN) {
+        derniereDetection = millis();
+        compteurPietons++;
+        envoyerYOUGIS("compteur_pietons", compteurPietons);
+        Serial.println("Passage pieton comptabilise (ultrason)");
+      }
+      demandePieton = true;   // déclenche la traversée (pilote le feu)
+      Serial.println("Demande par Ultrason");
+    }
+    pedestrianPrec = pedestrianActuel;
   }
 
   gererBuzzer();
