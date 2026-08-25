@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const express = require('express');
 const db = require('../db');
 const { authRequired } = require('../auth');
-const { lastOf } = require('../cache');
+const { lastOf, remember } = require('../cache');
 const { isOnline } = require('../constants');
 const { emitToUser } = require('../emit');
 
@@ -195,6 +195,23 @@ devicesRouter.post('/:id/feu/reset-counter', authRequired, (req, res) => {
     datastreamId: ds.id,
     value: -1,
     createdAt: Date.now(),
+  });
+
+  // Persistance : la « valeur courante » de compteur_pietons vit en base
+  // (data_points). Le simulateur la reprend à chaque lancement via /latest,
+  // donc si on ne l'écrit pas à 0 ici, le compteur REVIENT au chiffre de la
+  // simulation précédente après un simple arrêt/relance. On écrit 0 en base
+  // pour que la reprise reparte bien de zéro.
+  const now = Date.now();
+  db.prepare('INSERT INTO data_points (datastream_id, value, created_at) VALUES (?, ?, ?)')
+    .run(ds.id, 0, now);
+  remember(ds.id, 0, now);
+
+  emitToUser(req.app.locals.io, req.user.id, 'data:update', {
+    datastreamId: ds.id,
+    deviceId: device.id,
+    value: 0,
+    createdAt: now,
   });
 
   res.json({ ok: true, resetCounter: true });

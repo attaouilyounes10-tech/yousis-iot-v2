@@ -508,7 +508,10 @@ def lire_compteur(base, token):
         _, latest = request(base, "/api/devices/" + token + "/latest", token=token)
         for s in latest.get("datastreams", []):
             if s["key"] == "compteur_pietons" and s.get("value") is not None:
-                return int(float(s["value"]))
+                val = int(float(s["value"]))
+                # Une valeur négative (impulsion de RAZ -1 encore en attente)
+                # n'est pas un comptage valide : on l'ignore et on repart de 0.
+                return val if val >= 0 else 0
     except Exception:
         pass
     return 0
