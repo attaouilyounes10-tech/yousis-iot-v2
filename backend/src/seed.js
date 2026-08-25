@@ -27,6 +27,7 @@ const DEMO_DEVICE = {
     { key: 'duree_orange', unit: 's', data_type: 'number' },
     { key: 'duree_rouge', unit: 's', data_type: 'number' },
     { key: 'bouton_pieton', unit: '', data_type: 'number' },
+    { key: 'cause', unit: '', data_type: 'number' },
   ],
 };
 

@@ -53,8 +53,23 @@ router.post('/data', (req, res) => {
     return res.status(400).json({ error: 'Champs "key" et "value" (numérique) requis' });
   }
 
-  const ds = db.prepare('SELECT * FROM datastreams WHERE device_id = ? AND key = ?').get(device.id, key);
-  if (!ds) return res.status(404).json({ error: `Datastream '${key}' inconnu pour ce device` });
+  let ds = db.prepare('SELECT * FROM datastreams WHERE device_id = ? AND key = ?').get(device.id, key);
+  if (!ds) {
+    // Auto-création ciblée du datastream 'cause' : le device l'envoie à chaque
+    // cycle pour déclarer la VRAIE cause du déclenchement (0 = capteur, 1 = bouton).
+    // On tolère son absence (sinon un oubli de l'utilisateur bloquerait tout le
+    // POST en 404). Les autres clés gardent leur protection anti-typo (404) car
+    // un datastream inconnu relève d'une faute de configuration, pas d'un flux
+    // attendu comme 'cause'.
+    if (key === 'cause') {
+      const info = db
+        .prepare('INSERT INTO datastreams (device_id, key, unit, data_type) VALUES (?, ?, ?, ?)')
+        .run(device.id, key, '', 'number');
+      ds = db.prepare('SELECT * FROM datastreams WHERE id = ?').get(info.lastInsertRowid);
+    } else {
+      return res.status(404).json({ error: `Datastream '${key}' inconnu pour ce device` });
+    }
+  }
 
   const now = Date.now();
   const io = req.app.locals.io;
@@ -68,6 +83,17 @@ router.post('/data', (req, res) => {
   // On ne log que les changements d'état du feu (datastream 'feu'),
   // en comparant avec la dernière ligne enregistrée pour ce device.
   if (ds.key === 'feu') {
+    // Garantie de robustesse : on s'assure que le datastream 'cause' existe
+    // pour CE device, même s'il a été créé manuellement sans lui (le seed ne
+    // touche que le device de démo). Sinon le frontend n'aurait jamais
+    // byKey.cause → causeVal = undefined → le badge « Bouton poussoir /
+    // Distance critique » tomberait TOUJOURS sur « Distance critique ». On le
+    // crée une seule fois (idempotent : le SELECT préalable évite les doublons).
+    const causeDs = db.prepare("SELECT id FROM datastreams WHERE device_id = ? AND key = 'cause'").get(device.id);
+    if (!causeDs) {
+      db.prepare('INSERT INTO datastreams (device_id, key, unit, data_type) VALUES (?, ?, ?, ?)')
+        .run(device.id, 'cause', '', 'number');
+    }
     const dernier = db.prepare('SELECT etat FROM feu_cycles WHERE device_id = ? ORDER BY id DESC LIMIT 1').get(device.id);
     if (!dernier || dernier.etat !== value) {
       // Récupère la distance courante (si connue) pour le contexte du cycle
@@ -78,8 +104,14 @@ router.post('/data', (req, res) => {
       // Compteur de passages piétons (envoyé par le device, fiable) pour la synthèse
       const cData = db.prepare('SELECT value FROM data_points dp JOIN datastreams ds ON ds.id = dp.datastream_id WHERE ds.device_id = ? AND ds.key = ? ORDER BY dp.id DESC LIMIT 1')
         .get(device.id, 'compteur_pietons');
-      db.prepare('INSERT INTO feu_cycles (device_id, etat, pedestrian, distance, compteur, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(device.id, value, pedData ? pedData.value : 0, dDist ? dDist.value : null, cData ? cData.value : null, now);
+      // Cause réelle du déclenchement (envoyée par le device) : 0 = capteur,
+      // 1 = bouton « Demander passage piéton ». On ne la devine plus à partir de
+      // `pedestrian` (état instantané du capteur) — voir correction du libellé.
+      const causeData = db.prepare('SELECT value FROM data_points dp JOIN datastreams ds ON ds.id = dp.datastream_id WHERE ds.device_id = ? AND ds.key = ? ORDER BY dp.id DESC LIMIT 1')
+        .get(device.id, 'cause');
+      const causeVal = causeData ? Number(causeData.value) : 0;
+      db.prepare('INSERT INTO feu_cycles (device_id, etat, pedestrian, distance, compteur, cause, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(device.id, value, pedData ? pedData.value : 0, dDist ? dDist.value : null, cData ? cData.value : null, causeVal, now);
       // Notifie en temps réel les clients de la vue Cycles
       emitToUser(io, device.user_id, 'cycle:new', { deviceId: device.id, etat: value, createdAt: now });
     }
@@ -152,7 +184,7 @@ router.get('/devices/:token/cycles', (req, res) => {
 
   const limit = Math.min(parseInt(req.query.limit || '200', 10) || 200, 1000);
   const rows = db
-    .prepare('SELECT etat, pedestrian, distance, created_at AS createdAt FROM feu_cycles WHERE device_id = ? ORDER BY id DESC LIMIT ?')
+    .prepare('SELECT etat, pedestrian, distance, compteur, cause, created_at AS createdAt FROM feu_cycles WHERE device_id = ? ORDER BY id DESC LIMIT ?')
     .all(device.id, limit);
   res.json(rows.reverse()); // du plus ancien au plus récent
 });

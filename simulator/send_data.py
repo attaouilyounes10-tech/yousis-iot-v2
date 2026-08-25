@@ -130,6 +130,9 @@ class FeuScenario:
         self._compteur = int(compteur_init)  # repris depuis le backend (sinon 0)
         self._ped_prec = 0         # valeur précédente du piéton (détection de front)
         self._raz_guard = False    # garde à un coup après un RAZ compteur (supprime 1 front)
+        self._cause = 0            # cause du déclenchement : 0 = capteur (ultrason),
+                                    # 1 = bouton « Demander passage piéton ». Envoyée
+                                    # dans le datastream 'cause' à chaque cycle.
 
     @staticmethod
     def _now():
@@ -165,14 +168,18 @@ class FeuScenario:
                 self._cycle_start = self._now()
                 self._phase_until = 0.0
             self.mode = mode
-        if bouton_pieton is not None:
-            # Bouton « Piéton » : un front montant (0 -> 1) déclenche UNE
-            # demande de passage (mémorisée jusqu'à la fin du rouge). On ne
-            # maintient PAS une demande perpétuelle : sinon le rouge resterait
-            # bloqué tant que la plateforme garde la commande à 1.
-            if bouton_pieton == 1 and self._bouton_prec == 0:
-                self._appui = True
-            self._bouton_prec = bouton_pieton
+        # Bouton « Piéton » : un front montant (0 -> 1) déclenche UNE
+        # demande de passage (mémorisée jusqu'à la fin du rouge). La commande
+        # 'bouton_pieton' est une IMPULSION : le backend la SUPPRIME après
+        # lecture (acquittement), donc aux cycles suivants /latest renvoie
+        # None. On le traite comme un 0 (pas d'appui), sinon _bouton_prec
+        # resterait à None et le test `== 0` échouerait pour TOUTES les
+        # presses suivantes → cause coincée à 0 (« Distance critique »).
+        bouton = bouton_pieton if bouton_pieton is not None else 0
+        if bouton == 1 and self._bouton_prec == 0:
+            self._appui = True
+            self._cause = 1  # déclenchement par le bouton (et non le capteur)
+        self._bouton_prec = bouton
         if reset_compteur:
             # Impulsion « Remise à zéro » du compteur de passages piétons,
             # envoyée par la plateforme (« Remettre à 0 » de la page Cycles).
@@ -240,6 +247,7 @@ class FeuScenario:
             self._feu = FEU_VERT
             self._cycle_start = now
             self._appui = False  # la demande est consommée (passage effectué)
+            self._cause = 0      # un nouveau cycle propre repart sans cause « bouton »
         return self._feu
 
     def etat(self):
@@ -262,6 +270,14 @@ class FeuScenario:
             pedestrian = 1 if distance < self.seuil else 0
         # Comptabilise un passage sur le front montant du piéton (comme le sketch ESP32)
         if pedestrian == 1 and self._ped_prec == 0:
+            self._appui = True
+            # On ne « rétrograde » pas une cause « bouton » déjà active : si
+            # l'utilisateur a cliqué « Demander passage piéton », le passage
+            # reste attribué au BOUTON même si le capteur détecte un piéton en
+            # même temps (le simulateur génère des piétons en continu). Sinon le
+            # cycle serait à tort journalisé « Distance critique ».
+            if self._cause != 1:
+                self._cause = 0  # déclenchement par le capteur (ultrason), pas le bouton
             if self._raz_guard:
                 # On vient de remettre le compteur à 0 : on consomme ce premier
                 # front (le piéton déjà présent au RAZ) sans le compter, afin de
@@ -372,9 +388,19 @@ def main():
                                              duree_orange=dOrange, duree_rouge=dRouge)
 
                 distance, pedestrian, feu, compteur = scenario.etat()
-                for key, value in (("distance", distance), ("pedestrian", pedestrian), ("feu", feu), ("compteur_pietons", compteur)):
-                    if key in keys:
-                        envoyer(args.base, args.token, key, value)
+                # 'cause' est envoyé AVANT 'feu' : au moment où le backend journalise
+                # le changement d'état (sur la réception de 'feu'), la dernière valeur
+                # de 'cause' est déjà en base → la cause réelle est bien enregistrée
+                # (sinon on retomberait sur la valeur par défaut 0).
+                # NB : 'cause' est envoyé INCONDITIONNELLEMENT (hors garde `if key in
+                # keys`) : s'il n'existait pas au démarrage (device créé manuellement
+                # sans ce datastream), le backend l'auto-crée à la première réception.
+                # Sinon le frontend n'aurait jamais byKey.cause → causeVal = undefined
+                # → le badge tomberait TOUJOURS sur « Distance critique ».
+                for key, value in (("distance", distance), ("pedestrian", pedestrian), ("cause", scenario._cause), ("feu", feu), ("compteur_pietons", compteur)):
+                    if key != "cause" and key not in keys:
+                        continue
+                    envoyer(args.base, args.token, key, value)
                 print(f"[{time.strftime('%H:%M:%S')}] distance={distance} cm · "
                       f"piéton={'OUI ' if pedestrian else 'NON '}· feu={NOMS_FEU[feu]} · "
                       f"passages={compteur} · "

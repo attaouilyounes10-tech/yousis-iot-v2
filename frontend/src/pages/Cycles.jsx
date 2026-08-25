@@ -275,9 +275,11 @@ export default function Cycles() {
                         </td>
                         <td className="py-2 pr-4">
                           {(c.etat === 1 || c.etat === 2)
-                            ? (c.pedestrian === 1
-                                ? <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 text-xs text-cyan-300">📏 Distance critique</span>
-                                : <span className="rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-xs text-fuchsia-300">🔘 Bouton poussoir</span>)
+                            ? (c.cause === undefined
+                                ? <span className="text-slate-600">—</span>
+                                : (Number(c.cause) === 1
+                                    ? <span className="rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-xs text-fuchsia-300">🔘 Bouton poussoir</span>
+                                    : <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 text-xs text-cyan-300">📏 Distance critique</span>))
                             : <span className="text-slate-600">—</span>}
                         </td>
                         <td className="py-2 pr-4 text-slate-300">
@@ -324,7 +326,7 @@ function FriseCycles({ segments, etatMap, fmtTime }) {
             key={i}
             title={`${etatMap[s.etat]?.label || s.etat} — ${fmtTime(s.debut)} — ${(s.duree / 1000).toFixed(1)} s${
               (s.etat === 1 || s.etat === 2)
-                ? (s.pedestrian === 1 ? ' — 📏 Distance critique' : ' — 🔘 Bouton poussoir')
+                ? (s.cause === undefined ? '' : (Number(s.cause) === 1 ? ' — 🔘 Bouton poussoir' : ' — 📏 Distance critique'))
                 : (s.pedestrian === 1 ? ' — 🚸 piéton' : '')
             }`}
             className="group absolute top-0 h-full"

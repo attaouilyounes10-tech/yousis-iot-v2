@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS feu_cycles (
   pedestrian    INTEGER NOT NULL DEFAULT 0, -- 1 si c'était un passage piéton
   distance      REAL,              -- distance mesurée à l'entrée dans l'état
   compteur      INTEGER,           -- compteur_pietons du device à l'entrée dans l'état
+  cause         INTEGER DEFAULT 0, -- 0 = capteur (distance critique) · 1 = bouton « Demander passage piéton »
   created_at    INTEGER NOT NULL   -- epoch ms
 );
 CREATE INDEX IF NOT EXISTS idx_cycles_dev_time ON feu_cycles(device_id, created_at DESC);

@@ -90,7 +90,7 @@ devicesRouter.get('/:id/cycles', (req, res) => {
   if (!device) return res.status(404).json({ error: 'Device introuvable' });
   const limit = Math.min(parseInt(req.query.limit || '500', 10) || 500, 2000);
   const rows = db
-    .prepare('SELECT etat, pedestrian, distance, compteur, created_at AS createdAt FROM feu_cycles WHERE device_id = ? ORDER BY id DESC LIMIT ?')
+    .prepare('SELECT etat, pedestrian, distance, compteur, cause, created_at AS createdAt FROM feu_cycles WHERE device_id = ? ORDER BY id DESC LIMIT ?')
     .all(device.id, limit);
   res.json(rows.reverse());
 });

@@ -29,5 +29,10 @@ try {
 } catch (_) {
   /* colonne déjà présente : rien à faire */
 }
+try {
+  db.exec('ALTER TABLE feu_cycles ADD COLUMN cause INTEGER');
+} catch (_) {
+  /* colonne déjà présente : rien à faire */
+}
 
 module.exports = db;

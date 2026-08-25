@@ -90,6 +90,8 @@ bool wifiOK = false;
 bool demandePieton = false;
 bool ancienEtatBouton = HIGH;
 int  compteurPietons = 0;
+int  causeActuelle = 0;          // cause du déclenchement : 0 = capteur (ultrason),
+                                 // 1 = bouton (physique ou « Demander passage piéton »)
 bool pedestrianActuel = false;   // détection courante (avec hystérésis)
 bool pedestrianPrec   = false;   // détection précédente (front montant)
 unsigned long derniereDetection = 0;
@@ -246,6 +248,7 @@ void entrerDansEtat(EtatFeu nouvelEtat) {
   envoyerYOUXIS("feu", feuCode);
   envoyerYOUXIS("pedestrian", pedCode);
   envoyerYOUXIS("compteur_pietons", compteurPietons);
+  envoyerYOUXIS("cause", causeActuelle);
 }
 
 void gererBuzzer() {
@@ -287,6 +290,7 @@ void lireBouton() {
   bool etat = digitalRead(PIN_BOUTON);
   if (ancienEtatBouton == HIGH && etat == LOW) {
     demandePieton = true;
+    causeActuelle = 1;   // déclenchement par le bouton physique
     Serial.println("Demande par Bouton");
   }
   ancienEtatBouton = etat;
@@ -364,6 +368,14 @@ void loop() {
         Serial.println("Passage pieton comptabilise (ultrason)");
       }
       demandePieton = true;   // déclenche la traversée (pilote le feu)
+      // On ne « rétrograde » pas une cause « bouton » déjà active : si
+      // l'utilisateur a cliqué « Demander passage piéton » (causeActuelle = 1),
+      // le passage reste attribué au BOUTON même si le capteur détecte un
+      // piéton en même temps. Sinon le cycle serait à tort journalisé
+      // « Distance critique ».
+      if (causeActuelle != 1) {
+        causeActuelle = 0;   // déclenchement par le capteur (distance critique)
+      }
       Serial.println("Demande par Ultrason");
     }
     pedestrianPrec = pedestrianActuel;
@@ -376,6 +388,7 @@ void loop() {
   boutonPrec = boutonHaut;
   if (appui) {
     demandePieton = true;
+    causeActuelle = 1;   // déclenchement par le bouton du dashboard
     Serial.println("Demande par Dashboard (bouton_pieton)");
   }
 
@@ -396,7 +409,13 @@ void loop() {
     unsigned long ecoule = millis() - tempsEntree;
     switch (etatActuel) {
       case ROUGE:
-        if (ecoule >= dureeRougeCmd) entrerDansEtat(VERT);
+        if (ecoule >= dureeRougeCmd) {
+          // Fin de la traversée : la demande est consommée et un cycle
+          // propre repart au VERT sans cause « bouton » (sinon un clic
+          // resterait attribué à tous les cycles suivants).
+          causeActuelle = 0;
+          entrerDansEtat(VERT);
+        }
         break;
       case VERT:
         if (ecoule >= dureeVertCmd) entrerDansEtat(ORANGE);

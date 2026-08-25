@@ -57,7 +57,12 @@ export default function Feu() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  // Recharge les devices + datastreams (et donc byKey.cause) à chaque montage
+  // ET à chaque changement de device sélectionné. Ainsi, si le datastream
+  // 'cause' est créé côté backend APRÈS le 1er chargement de la page (device
+  // créé manuellement, ou 1er cycle du simulateur), il est bien pris en compte
+  // sans avoir à recharger manuellement le navigateur.
+  useEffect(() => { load(); }, [selectedId]);
 
   const device = devices.find((d) => String(d.id) === selectedId) || null;
   const byKey = device?.byKey || {};
@@ -82,6 +87,12 @@ export default function Feu() {
   const feuVal = feu ? feu.value : undefined;
   const distVal = dist ? dist.value : undefined;
   const pedVal = ped ? ped.value : undefined;
+  // 0 = capteur, 1 = bouton « Demander passage piéton ».
+  // `hasCause` garantit qu'on ne tombe PAS par défaut sur « Distance critique »
+  // quand le datastream 'cause' n'est pas encore connu (device créé manuellement
+  // ou 1er cycle) : on affiche alors un état neutre, jamais un faux libellé.
+  const hasCause = byKey.cause !== undefined;
+  const causeVal = hasCause ? liveData?.[byKey.cause]?.value : undefined;
   const lastAt = feu?.createdAt || dist?.createdAt;
 
   // ---- Historique distance au changement de device ----
@@ -287,10 +298,14 @@ export default function Feu() {
                 <p className="text-5xl font-black text-cyan-300">
                   {fmtValue(distVal)} <span className="text-xl font-normal text-slate-400">cm</span>
                 </p>
-                {commandeEmise && pedVal === 1 ? (
-                  <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-sm font-semibold text-cyan-300">📏 Distance critique</span>
-                ) : commandeEmise && pedVal === 0 ? (
-                  <span className="rounded-full bg-fuchsia-500/15 px-3 py-1 text-sm font-semibold text-fuchsia-300">🔘 Bouton poussoir</span>
+                {(feuVal === 1 || feuVal === 2) ? (
+                  causeVal === 1 ? (
+                    <span className="rounded-full bg-fuchsia-500/15 px-3 py-1 text-sm font-semibold text-fuchsia-300">🔘 Bouton poussoir</span>
+                  ) : causeVal === 0 ? (
+                    <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-sm font-semibold text-cyan-300">📏 Distance critique</span>
+                  ) : (
+                    <span className="rounded-full bg-slate-800/60 px-3 py-1 text-sm font-semibold text-slate-400">⏳ Cause inconnue…</span>
+                  )
                 ) : (
                   <span className="text-sm text-slate-500">En attente de commande…</span>
                 )}
