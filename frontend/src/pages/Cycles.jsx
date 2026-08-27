@@ -123,6 +123,15 @@ export default function Cycles() {
   // NB : prendre le seul max de l'historique serait fragile — le compteur vit
   // côté device, donc un reset qui n'atteint pas le simulateur laisserait
   // l'historique se re-remplir avec l'ancien chiffre.
+  const device = devices.find((d) => String(d.id) === selectedId) || null;
+  // Index datastream key -> id (pour lire la valeur live compteur_pietons).
+  // Déclaré AVANT son usage (liveCompteur) pour éviter la TDZ (const utilisé
+  // avant initialisation -> "Cannot access 'byKey' before initialization").
+  const byKey = useMemo(() => {
+    const m = {};
+    for (const ds of (device?.datastreams || [])) m[ds.key] = ds.id;
+    return m;
+  }, [device]);
   const liveCompteur = byKey.compteur_pietons != null
     ? liveData?.[byKey.compteur_pietons]?.value
     : undefined;
@@ -153,14 +162,6 @@ export default function Cycles() {
     for (const s of segments) t[s.etat] = (t[s.etat] || 0) + s.duree;
     return t;
   }, [segments]);
-
-  const device = devices.find((d) => String(d.id) === selectedId) || null;
-  // Index datastream key -> id (pour lire la valeur live compteur_pietons)
-  const byKey = useMemo(() => {
-    const m = {};
-    for (const ds of (device?.datastreams || [])) m[ds.key] = ds.id;
-    return m;
-  }, [device]);
 
   return (
     <div className="mx-auto max-w-6xl">
