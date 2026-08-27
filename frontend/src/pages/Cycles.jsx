@@ -117,12 +117,19 @@ export default function Cycles() {
   }, [history, cycles, selectedId]);
 
   // Nombre de passages piétons = la valeur fiable envoyée par le device
-  // (compteur_pietons), pas le nombre de lignes de journal (un seul passage
-  // physique crée plusieurs lignes d'état). On prend le maximum vu.
-  const totalPassages = deviceCycles.reduce(
-    (max, c) => Math.max(max, Number(c.compteur) || 0),
-    0
-  );
+  // (compteur_pietons). On préfère la VALEUR LIVE du datastream (autorité :
+  // le backend la remet à 0 de façon persistante au « Remettre à 0 »), et on
+  // retombe sur le max de l'historique si la valeur live n'est pas dispo.
+  // NB : prendre le seul max de l'historique serait fragile — le compteur vit
+  // côté device, donc un reset qui n'atteint pas le simulateur laisserait
+  // l'historique se re-remplir avec l'ancien chiffre.
+  const liveCompteur = byKey.compteur_pietons != null
+    ? liveData?.[byKey.compteur_pietons]?.value
+    : undefined;
+  const totalPassages =
+    liveCompteur != null && Number.isFinite(Number(liveCompteur))
+      ? Number(liveCompteur)
+      : deviceCycles.reduce((max, c) => Math.max(max, Number(c.compteur) || 0), 0);
   const dernierEtat = deviceCycles.length ? deviceCycles[deviceCycles.length - 1].etat : null;
 
   // Frise : chaque changement d'état est une bande [debut, fin[ colorée par état.
@@ -148,6 +155,12 @@ export default function Cycles() {
   }, [segments]);
 
   const device = devices.find((d) => String(d.id) === selectedId) || null;
+  // Index datastream key -> id (pour lire la valeur live compteur_pietons)
+  const byKey = useMemo(() => {
+    const m = {};
+    for (const ds of (device?.datastreams || [])) m[ds.key] = ds.id;
+    return m;
+  }, [device]);
 
   return (
     <div className="mx-auto max-w-6xl">

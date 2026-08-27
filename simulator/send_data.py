@@ -34,11 +34,14 @@ import atexit
 import json
 import os
 import random
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+import http.client
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # Sur Windows, la console par défaut (cp1252) refuse les caractères UTF-8
@@ -68,6 +71,48 @@ NOMS_FEU = {FEU_VERT: "VERT", FEU_ORANGE: "ORANGE", FEU_ROUGE: "ROUGE", FEU_MAIN
 NOMS_MODE = {0: "AUTO", 1: "VERT FORCE", 2: "ROUGE FORCE", 3: "MAINTENANCE"}
 
 
+# Forcer l'IPv4 et allonger le timeout du handshake TLS.
+#
+# Problème observé sur Windows : urllib (OpenSSL) tente parfois l'IPv6 en
+# premier ; si la pile IPv4/IPv6 de la machine ne répond pas, le handshake TLS
+# « timed out » alors que curl/Schannel réussit. On force donc la résolution en
+# IPv4 pour la socket, tout en GARDANT le nom d'hôte d'origine pour le SNI et
+# l'en-tête Host → le certificat TLS est toujours validé (pas d'insecure skip).
+# Le timeout de 5 s ne concernait que la lecture ; on le monte à 15 s pour
+# laisser le handshake s'achever sur un réseau lent / distant (Railway).
+_REQUEST_TIMEOUT = 15  # s : assez large pour un TLS de bout en bout (était 5)
+
+
+class _IPv4HTTPSConnection(http.client.HTTPSConnection):
+    """HTTPSConnection qui résout l'hôte en IPv4 uniquement (évite une
+    tentative IPv6 bloquante sur certaines piles Windows), tout en conservant
+    le nom d'hôte d'origine pour l'en-tête Host et le SNI (certificat validé)."""
+
+    def connect(self):
+        # Résolution IPv4 explicite, puis connexion TCP vers l'IP.
+        addrs = socket.getaddrinfo(
+            self.host, self.port, socket.AF_INET, socket.SOCK_STREAM
+        )
+        (family, _type, _proto, _canon, sockaddr) = addrs[0]
+        self.sock = socket.socket(family, _type, _proto)
+        if self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+            self.sock.settimeout(self.timeout)
+        self.sock.connect(sockaddr)
+        # Enveloppe TLS en conservant le nom d'hôte pour le SNI + validation.
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class _IPv4HTTPSHandler(urllib.request.HTTPSHandler):
+    """Handler HTTPS qui ouvre des connexions IPv4 (SNI/Host préservés)."""
+
+    def https_open(self, req):
+        return self.do_open(_IPv4HTTPSConnection, req)
+
+
+# Opener réutilisé (une seule instance) : HTTPS en IPv4 + fallback HTTP natif.
+_opener = urllib.request.build_opener(_IPv4HTTPSHandler)
+
+
 def request(base, path, token=None, body=None):
     """Fait une requête HTTP et renvoie (status, payload dict)."""
     headers = {}
@@ -78,7 +123,10 @@ def request(base, path, token=None, body=None):
         headers["Content-Type"] = "application/json"
         data = json.dumps(body).encode()
     req = urllib.request.Request(base + path, data=data, headers=headers)
-    with urllib.request.urlopen(req, timeout=5) as resp:
+    # Pour https on passe par l'opener IPv4 ; pour http on laisse urllib natif.
+    use_ipv4 = urllib.parse.urlparse(base).scheme == "https"
+    opener = _opener if use_ipv4 else urllib.request.build_opener()
+    with opener.open(req, timeout=_REQUEST_TIMEOUT) as resp:
         raw = resp.read().decode() or "{}"
         return resp.status, json.loads(raw)
 

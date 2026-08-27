@@ -19,8 +19,10 @@ export function LiveDataProvider({ token, children }) {
   // pour vider leur historique local (graphe distance, journal…).
   const [resetSignal, setResetSignal] = useState(0);
   // Timestamp après lequel les nouvelles données seront acceptées à nouveau.
-  // Initialisé à 0 = aucune restriction.
-  const ignoreUntil = useRef(Date.now());
+  // Initialisé à 0 = aucune restriction (sinon, comparer createdAt du serveur
+  // à Date.now() du navigateur échoue dès qu'une légère dérive d'horloge
+  // existe → toutes les données live sont ignorées et rien ne se rafraîchit).
+  const ignoreUntil = useRef(0);
 
   useEffect(() => {
     // En mode « sans login », on se connecte sans token : le backend bascule
